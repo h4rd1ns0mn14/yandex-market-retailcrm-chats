@@ -63,37 +63,64 @@ const retailcrm = {
       },
     };
 
-    logger.info('Registering integration module', { webhookUrl });
+    logger.info('Registering integration module', { webhookUrl, code: config.module.code });
 
     // RetailCRM требует integrationModule как JSON string в form-urlencoded
     const payload = new URLSearchParams();
     payload.append('integrationModule', JSON.stringify(moduleData));
 
-    const { data } = await crmClient.post(
-      `/api/v5/integration-modules/${config.module.code}/edit`,
-      payload.toString(),
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        params: { apiKey: config.retailcrm.apiKey },
+    try {
+      const { data } = await crmClient.post(
+        `/api/v5/integration-modules/${config.module.code}/edit`,
+        payload.toString(),
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          params: { apiKey: config.retailcrm.apiKey },
+        }
+      );
+
+      logger.info('RetailCRM response', { data });
+
+      if (!data.success) {
+        throw new Error(`Module registration failed: ${JSON.stringify(data)}`);
       }
-    );
 
-    logger.info('RetailCRM response', { data });
+      // Сохраняем endpointUrl и token
+      const info = data.info || {};
+      if (info.mgTransport) {
+        const { endpointUrl, token } = info.mgTransport;
+        storage.setMgConfig('endpointUrl', endpointUrl);
+        storage.setMgConfig('token', token);
+        logger.info('MG Transport configured', { endpointUrl });
+      }
 
-    if (!data.success) {
-      throw new Error(`Module registration failed: ${JSON.stringify(data)}`);
+      return data;
+    } catch (err) {
+      if (err.response?.status === 403) {
+        // Модуль уже существует, пробуем получить информацию
+        logger.warn('Module may already exist, trying to get info...');
+        
+        try {
+          const { data } = await crmClient.get(
+            `/api/v5/integration-modules/${config.module.code}`,
+            {
+              params: { apiKey: config.retailcrm.apiKey },
+            }
+          );
+
+          if (data.success && data.info?.mgTransport) {
+            const { endpointUrl, token } = data.info.mgTransport;
+            storage.setMgConfig('endpointUrl', endpointUrl);
+            storage.setMgConfig('token', token);
+            logger.info('MG Transport loaded from existing module', { endpointUrl });
+            return data;
+          }
+        } catch (getErr) {
+          logger.error('Failed to get existing module', { error: getErr.message });
+        }
+      }
+      throw err;
     }
-
-    // Сохраняем endpointUrl и token
-    const info = data.info || {};
-    if (info.mgTransport) {
-      const { endpointUrl, token } = info.mgTransport;
-      storage.setMgConfig('endpointUrl', endpointUrl);
-      storage.setMgConfig('token', token);
-      logger.info('MG Transport configured', { endpointUrl });
-    }
-
-    return data;
   },
 
   /**
