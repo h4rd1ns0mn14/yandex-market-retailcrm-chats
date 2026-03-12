@@ -30,16 +30,53 @@ const outbound = {
   /**
    * Скачать файл из MG по ID
    */
-  async downloadMgFile(fileUrl) {
+  async downloadMgFile(fileId) {
     const endpointUrl = config.mg.endpointUrl || storage.getMgConfig('endpointUrl');
     const token = config.mg.token || storage.getMgConfig('token');
 
-    // fileUrl из MG может быть полным URL или относительным
-    const fullUrl = fileUrl.startsWith('http')
-      ? fileUrl
-      : `${endpointUrl.replace(/\/+$/, '')}${fileUrl}`;
+    const baseURL = endpointUrl.includes('/api/transport/')
+      ? endpointUrl
+      : `${endpointUrl.replace(/\/+$/, '')}/api/transport/v1`;
 
-    const response = await axios.get(fullUrl, {
+    // Сначала получаем метаданные файла с URL для скачивания
+    const metaUrl = `${baseURL}/files/${fileId}`;
+    logger.info('Getting MG file metadata', { metaUrl });
+
+    try {
+      const metaRes = await axios.get(metaUrl, {
+        headers: { 'X-Transport-Token': token },
+        timeout: 15000,
+      });
+
+      const fileData = metaRes.data;
+      logger.info('MG file metadata', { id: fileData.id, url: fileData.url?.substring(0, 100), size: fileData.size });
+
+      // Скачиваем по URL из метаданных
+      if (fileData.url) {
+        const downloadUrl = fileData.url.startsWith('http')
+          ? fileData.url
+          : `${endpointUrl.replace(/\/+$/, '')}${fileData.url}`;
+
+        const response = await axios.get(downloadUrl, {
+          headers: { 'X-Transport-Token': token },
+          responseType: 'arraybuffer',
+          timeout: 30000,
+        });
+
+        return {
+          buffer: Buffer.from(response.data),
+          contentType: response.headers['content-type'] || 'application/octet-stream',
+        };
+      }
+    } catch (metaErr) {
+      logger.warn('MG file metadata failed, trying direct download', { error: metaErr.message, status: metaErr.response?.status });
+    }
+
+    // Фоллбэк: прямое скачивание /files/{id}/download
+    const downloadUrl = `${baseURL}/files/${fileId}/download`;
+    logger.info('Trying direct MG file download', { downloadUrl });
+
+    const response = await axios.get(downloadUrl, {
       headers: { 'X-Transport-Token': token },
       responseType: 'arraybuffer',
       timeout: 30000,
@@ -96,10 +133,9 @@ const outbound = {
               continue;
             }
 
-            const fileUrl = `/files/${fileId}`;
             const filename = item.caption || item.name || 'file';
             logger.info('Downloading file from MG', { fileId, filename });
-            const { buffer } = await this.downloadMgFile(fileUrl);
+            const { buffer } = await this.downloadMgFile(fileId);
 
             await ym.sendFile(marketChatId, buffer, filename);
             logger.info('File sent to Market', { marketChatId, filename });
