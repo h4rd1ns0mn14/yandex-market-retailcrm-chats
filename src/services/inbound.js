@@ -55,31 +55,19 @@ const inbound = {
       logger.info('Attachments found', { messageId, count: attachments.length, first: JSON.stringify(attachments[0]).substring(0, 200) });
     }
 
+    // Формируем текст с вложениями
+    let fullText = text || '';
     if (attachments.length > 0 && attachments[0].url) {
-      for (const file of attachments) {
-        try {
-          await retailcrm.sendFileMessage({
-            channelId: channel.mg_channel_id,
-            externalChatId: channel.mg_external_id,
-            externalMessageId: `ym-msg-${messageId}-file-${file.name || 'att'}`,
-            fileUrl: file.url,
-            fileName: file.name || 'attachment',
-            createdAt: createdAt || new Date().toISOString(),
-            customer,
-            originator,
-          });
-        } catch (err) {
-          logger.error('Error forwarding file', { messageId, error: err.message });
-        }
-      }
+      const fileLinks = attachments.map(f => `📎 ${f.name || 'Вложение'}`).join('\n');
+      fullText = fullText ? `${fullText}\n\n${fileLinks}` : fileLinks;
     }
 
-    if (text || attachments.length === 0) {
+    if (fullText || attachments.length === 0) {
       const result = await retailcrm.sendMessage({
         channelId: channel.mg_channel_id,
         externalChatId: channel.mg_external_id,
         externalMessageId: `ym-msg-${messageId}`,
-        text: text || '[Вложение]',
+        text: fullText || '[Вложение]',
         createdAt: createdAt || new Date().toISOString(),
         customer,
         originator,

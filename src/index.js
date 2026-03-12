@@ -56,19 +56,6 @@ app.post('/test-send', async (req, res) => {
   }
 });
 
-// Прокси для файлов Маркета (MG скачивает через наш сервер)
-app.get('/files/:fileId', async (req, res) => {
-  try {
-    const fileUrl = Buffer.from(req.params.fileId, 'base64url').toString('utf8');
-    const { buffer, contentType } = await ym.downloadFile(fileUrl);
-    res.set('Content-Type', contentType);
-    res.send(buffer);
-  } catch (err) {
-    logger.error('File proxy error', { error: err.message });
-    res.status(500).send('File download failed');
-  }
-});
-
 // ===== Запуск =====
 async function start() {
   try {
