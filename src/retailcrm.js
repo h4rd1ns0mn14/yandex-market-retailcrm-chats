@@ -163,7 +163,7 @@ const retailcrm = {
       avatar_url: avatarUrl || 'https://yastatic.net/market-export/_/i/favicon/yandex-market-32.png',
     });
 
-    logger.info('Channel activated', { channelId: data.channel_id, externalId });
+    logger.info('Channel activated', { data, externalId });
     return data;
   },
 
@@ -199,9 +199,18 @@ const retailcrm = {
       },
     };
 
-    const { data } = await mg.post('/messages', payload);
-    logger.info('Message sent to MG', { messageId: data.message_id, externalMessageId });
-    return data;
+    try {
+      const { data } = await mg.post('/messages', payload);
+      logger.info('Message sent to MG', { messageId: data.message_id, externalMessageId });
+      return data;
+    } catch (err) {
+      logger.error('MG sendMessage failed', {
+        status: err.response?.status,
+        responseData: err.response?.data,
+        payload: { ...payload, message: { ...payload.message, text: payload.message.text?.substring(0, 50) } },
+      });
+      throw err;
+    }
   },
 
   /**
