@@ -9,6 +9,8 @@ const logger = require('../logger');
  */
 router.post('/', async (req, res) => {
   try {
+    logger.info('RetailCRM webhook raw body', { body: JSON.stringify(req.body).substring(0, 1000) });
+
     const events = Array.isArray(req.body) ? req.body : [req.body];
 
     logger.info(`RetailCRM MG webhook: ${events.length} event(s)`);
