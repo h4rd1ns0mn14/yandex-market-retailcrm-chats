@@ -89,20 +89,22 @@ const outbound = {
       if (items.length > 0) {
         for (const item of items) {
           try {
-            const fileUrl = item.url || item.download_url;
-            if (!fileUrl) {
-              logger.warn('File item without URL', { item: JSON.stringify(item).substring(0, 200) });
+            // Скачиваем файл из MG по ID
+            const fileId = item.id;
+            if (!fileId) {
+              logger.warn('File item without id', { item: JSON.stringify(item).substring(0, 200) });
               continue;
             }
 
-            logger.info('Downloading file from MG', { fileUrl: fileUrl.substring(0, 100), name: item.caption || item.name });
-            const { buffer } = await this.downloadMgFile(fileUrl);
+            const fileUrl = `/files/${fileId}`;
             const filename = item.caption || item.name || 'file';
+            logger.info('Downloading file from MG', { fileId, filename });
+            const { buffer } = await this.downloadMgFile(fileUrl);
 
             await ym.sendFile(marketChatId, buffer, filename);
             logger.info('File sent to Market', { marketChatId, filename });
           } catch (err) {
-            logger.error('Error sending file to Market', { error: err.message });
+            logger.error('Error sending file to Market', { error: err.message, response: err.response?.data });
           }
         }
       }
