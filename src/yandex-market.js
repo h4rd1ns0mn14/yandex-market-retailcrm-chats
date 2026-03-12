@@ -39,10 +39,15 @@ const ym = {
    * @param {Object} params - messageIdFrom, limit
    */
   async getChatHistory(chatId, params = {}) {
-    const { data } = await client.post('/chats/history', {
-      chatId,
-      ...params,
-    });
+    const { limit, messageIdFrom, pageToken } = params;
+    const query = { chatId };
+    if (limit) query.limit = limit;
+    if (pageToken) query.pageToken = pageToken;
+
+    const body = {};
+    if (messageIdFrom) body.messageIdFrom = messageIdFrom;
+
+    const { data } = await client.post('/chats/history', body, { params: query });
     return data;
   },
 
@@ -52,10 +57,7 @@ const ym = {
    * @param {string} message
    */
   async sendMessage(chatId, message) {
-    const { data } = await client.post('/chats/message', {
-      chatId,
-      message,
-    });
+    const { data } = await client.post('/chats/message', { message }, { params: { chatId } });
     return data;
   },
 
