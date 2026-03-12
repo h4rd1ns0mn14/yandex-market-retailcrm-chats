@@ -183,7 +183,7 @@ const retailcrm = {
     const mg = getMgClient();
 
     const payload = {
-      channel_id: channelId,
+      channel: channelId,
       external_chat_id: externalChatId,
       message: {
         external_id: externalMessageId,
@@ -225,7 +225,7 @@ const retailcrm = {
     });
 
     const payload = {
-      channel_id: channelId,
+      channel: channelId,
       external_chat_id: externalChatId,
       message: {
         external_id: externalMessageId,
@@ -252,7 +252,7 @@ const retailcrm = {
   async markRead(channelId, externalChatId, untilMessageExternalId) {
     const mg = getMgClient();
     await mg.post('/messages/read', {
-      channel_id: channelId,
+      channel: channelId,
       external_chat_id: externalChatId,
       until_message_external_id: untilMessageExternalId,
     });
