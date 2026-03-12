@@ -70,11 +70,11 @@ const ym = {
   async sendFile(chatId, fileBuffer, filename) {
     const FormData = require('form-data');
     const form = new FormData();
-    form.append('chatId', String(chatId));
     form.append('file', fileBuffer, { filename });
 
     const { data } = await client.post('/chats/file/send', form, {
       headers: form.getHeaders(),
+      params: { chatId },
     });
     return data;
   },

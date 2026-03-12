@@ -1,5 +1,7 @@
+const axios = require('axios');
 const ym = require('../yandex-market');
 const storage = require('../storage');
+const config = require('../config');
 const logger = require('../logger');
 
 const outbound = {
@@ -25,35 +27,55 @@ const outbound = {
     }
   },
 
-  async handleMessageSent(data) {
-    // MG webhook format:
-    // data.content = текст сообщения
-    // data.type = "text" / "file" / "image"
-    // data.external_chat_id = "ym-chat-XXXXX"
-    // data.channel_id = number
-    // data.user = {id, first_name, last_name} — оператор
-    // data.customer = {first_name, last_name} — покупатель
-    // data.id = message id in MG
+  /**
+   * Скачать файл из MG по ID
+   */
+  async downloadMgFile(fileUrl) {
+    const endpointUrl = config.mg.endpointUrl || storage.getMgConfig('endpointUrl');
+    const token = config.mg.token || storage.getMgConfig('token');
 
+    // fileUrl из MG может быть полным URL или относительным
+    const fullUrl = fileUrl.startsWith('http')
+      ? fileUrl
+      : `${endpointUrl.replace(/\/+$/, '')}${fileUrl}`;
+
+    const response = await axios.get(fullUrl, {
+      headers: { 'X-Transport-Token': token },
+      responseType: 'arraybuffer',
+      timeout: 30000,
+    });
+
+    return {
+      buffer: Buffer.from(response.data),
+      contentType: response.headers['content-type'] || 'application/octet-stream',
+    };
+  },
+
+  async handleMessageSent(data) {
     const externalChatId = data.external_chat_id;
     const content = data.content;
     const msgType = data.type || 'text';
-    const user = data.user; // оператор
+    const user = data.user;
+    const items = data.items || [];
 
-    logger.info('MG message_sent', { externalChatId, content: content?.substring(0, 50), type: msgType, user: user?.first_name });
+    logger.info('MG message_sent', {
+      externalChatId,
+      content: content?.substring(0, 50),
+      type: msgType,
+      user: user?.first_name,
+      itemsCount: items.length,
+    });
 
-    if (!content || !externalChatId) {
-      logger.warn('Missing content or external_chat_id', { externalChatId, hasContent: !!content });
+    if (!externalChatId) {
+      logger.warn('Missing external_chat_id');
       return;
     }
 
-    // Если нет user — значит сообщение не от оператора (возможно наше входящее)
     if (!user) {
-      logger.info('No user in webhook, likely our own message, skipping');
+      logger.info('No user in webhook, skipping');
       return;
     }
 
-    // Ищем канал
     const channel = storage.getChannelByMgExternalId(externalChatId);
     if (!channel) {
       logger.error('Channel not found', { externalChatId });
@@ -63,6 +85,29 @@ const outbound = {
     const marketChatId = parseInt(channel.market_chat_id, 10);
 
     try {
+      // Обработка файлов
+      if (items.length > 0) {
+        for (const item of items) {
+          try {
+            const fileUrl = item.url || item.download_url;
+            if (!fileUrl) {
+              logger.warn('File item without URL', { item: JSON.stringify(item).substring(0, 200) });
+              continue;
+            }
+
+            logger.info('Downloading file from MG', { fileUrl: fileUrl.substring(0, 100), name: item.caption || item.name });
+            const { buffer } = await this.downloadMgFile(fileUrl);
+            const filename = item.caption || item.name || 'file';
+
+            await ym.sendFile(marketChatId, buffer, filename);
+            logger.info('File sent to Market', { marketChatId, filename });
+          } catch (err) {
+            logger.error('Error sending file to Market', { error: err.message });
+          }
+        }
+      }
+
+      // Обработка текста
       if (msgType === 'text' && content) {
         const result = await ym.sendMessage(marketChatId, content);
         logger.info('Message sent to Market', { marketChatId, text: content.substring(0, 50) });
@@ -76,8 +121,12 @@ const outbound = {
             direction: 'outbound',
           });
         }
-      } else {
-        logger.warn('Non-text message from CRM, skipping', { type: msgType });
+      } else if ((msgType === 'file' || msgType === 'image') && items.length === 0) {
+        // Файл без items — попробуем content как текст
+        if (content) {
+          await ym.sendMessage(marketChatId, content);
+          logger.info('File caption sent as text', { marketChatId });
+        }
       }
     } catch (err) {
       logger.error('Error sending to Market', {
