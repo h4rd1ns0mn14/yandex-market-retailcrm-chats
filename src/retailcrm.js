@@ -225,12 +225,31 @@ const retailcrm = {
    */
   async sendFileMessage({ channelId, externalChatId, externalMessageId, fileUrl, fileName, createdAt, customer, originator }) {
     const mg = getMgClient();
+    const ym = require('./yandex-market');
+    const FormData = require('form-data');
 
     try {
-      // Сначала загружаем файл по URL
-      logger.info('Uploading file to MG', { fileUrl: fileUrl?.substring(0, 100), fileName });
-      const uploadRes = await mg.post('/files/upload_by_url', {
-        url: fileUrl,
+      // Скачиваем файл с авторизацией Маркета
+      logger.info('Downloading file from Market', { fileUrl: fileUrl?.substring(0, 100), fileName });
+      const { buffer, contentType } = await ym.downloadFile(fileUrl);
+      logger.info('File downloaded', { size: buffer.length, contentType });
+
+      // Загружаем в MG через binary upload
+      const form = new FormData();
+      form.append('file', buffer, { filename: fileName, contentType });
+
+      const endpointUrl = config.mg.endpointUrl || storage.getMgConfig('endpointUrl');
+      const token = config.mg.token || storage.getMgConfig('token');
+      const baseURL = endpointUrl.includes('/api/transport/')
+        ? endpointUrl
+        : `${endpointUrl.replace(/\/+$/, '')}/api/transport/v1`;
+
+      const uploadRes = await axios.post(`${baseURL}/files/upload`, form, {
+        headers: {
+          ...form.getHeaders(),
+          'X-Transport-Token': token,
+        },
+        timeout: 30000,
       });
       logger.info('File uploaded to MG', { fileId: uploadRes.data?.id });
 

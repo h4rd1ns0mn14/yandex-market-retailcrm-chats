@@ -83,6 +83,21 @@ const ym = {
    * Создать новый чат по заказу
    * @param {number} orderId
    */
+  /**
+   * Скачать файл по URL (с авторизацией)
+   */
+  async downloadFile(fileUrl) {
+    const response = await axios.get(fileUrl, {
+      headers: { 'Api-Key': config.yandexMarket.oauthToken },
+      responseType: 'arraybuffer',
+      timeout: 30000,
+    });
+    return {
+      buffer: Buffer.from(response.data),
+      contentType: response.headers['content-type'] || 'application/octet-stream',
+    };
+  },
+
   async createChat(orderId) {
     const { data } = await client.post('/chats/new', { orderId });
     return data;
