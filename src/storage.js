@@ -33,6 +33,21 @@ function saveDb(data) {
 // Глобальный объект данных
 let db = loadDb();
 
+// Очистка каналов без mg_channel_id (битые записи)
+(function cleanupBrokenChannels() {
+  let cleaned = false;
+  for (const [key, ch] of Object.entries(db.channels)) {
+    if (!ch.mg_channel_id) {
+      delete db.channels[key];
+      cleaned = true;
+    }
+  }
+  if (cleaned) {
+    saveDb(db);
+    logger.info('Cleaned up channels with missing mg_channel_id');
+  }
+})();
+
 const storage = {
   // ===== Каналы =====
   getChannelByMarketChatId(marketChatId) {

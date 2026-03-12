@@ -28,7 +28,7 @@ const inbound = {
 
       storage.saveChannel({
         marketChatId: String(chatId),
-        mgChannelId: result.channel_id,
+        mgChannelId: result.id || result.channel_id,
         mgExternalId: externalId,
         chatType: chatType || 'UNKNOWN',
         orderId: orderId ? String(orderId) : null,
