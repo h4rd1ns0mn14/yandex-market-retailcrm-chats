@@ -47,7 +47,7 @@ const inbound = {
   async handleNewMessage(chatId, messageData) {
     const { messageId, message, sender, createdAt, payload: msgPayload } = messageData;
 
-    logger.info('New message from Market', { chatId, messageId });
+    logger.info('New message from Market', { chatId, messageId, sender, message: message?.substring(0, 100) });
 
     // Дедупликация
     const existing = storage.getMessageByMarketId(String(messageId));
@@ -63,7 +63,7 @@ const inbound = {
     }
 
     // Определяем, от кого сообщение
-    const isFromBuyer = sender === 'BUYER' || sender === 'USER';
+    const isFromBuyer = sender === 'CUSTOMER' || sender === 'BUYER' || sender === 'USER';
 
     if (!isFromBuyer) {
       // Сообщение от продавца — уже отправлено из CRM, пропускаем
