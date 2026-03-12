@@ -1,13 +1,11 @@
-const { v4: uuidv4 } = require('uuid');
 const ym = require('../yandex-market');
 const retailcrm = require('../retailcrm');
 const storage = require('../storage');
 const logger = require('../logger');
 
+let syncing = false;
+
 const inbound = {
-  /**
-   * Обработка нового чата из Маркета
-   */
   async handleNewChat(chatId, chatType, orderId) {
     let channel = storage.getChannelByMarketChatId(String(chatId));
 
@@ -37,17 +35,12 @@ const inbound = {
     return channel;
   },
 
-  /**
-   * Отправить сообщение в MG с правильным originator
-   */
   async forwardMessage(channel, chatId, messageId, text, createdAt, sender, customerInfo, msgPayload) {
     const isFromBuyer = sender === 'CUSTOMER' || sender === 'BUYER' || sender === 'USER';
     const isFromMarket = sender === 'MARKET' || sender === 'SUPPORT';
     const originator = isFromBuyer ? 'customer' : 'channel';
 
-    if (isFromMarket) {
-      return;
-    }
+    if (isFromMarket) return;
 
     const customer = {
       externalId: `ym-buyer-${chatId}`,
@@ -56,18 +49,19 @@ const inbound = {
       lastName: '',
     };
 
-    // Вложения (фото/файлы)
+    // Вложения
     const attachments = msgPayload || [];
     if (attachments.length > 0) {
-      logger.info('Message has attachments', { messageId, attachments: JSON.stringify(attachments).substring(0, 500) });
+      logger.info('Attachments found', { messageId, count: attachments.length, first: JSON.stringify(attachments[0]).substring(0, 200) });
     }
+
     if (attachments.length > 0 && attachments[0].url) {
       for (const file of attachments) {
         try {
           await retailcrm.sendFileMessage({
             channelId: channel.mg_channel_id,
             externalChatId: channel.mg_external_id,
-            externalMessageId: `ym-msg-${messageId}-file-${file.name || 'attachment'}`,
+            externalMessageId: `ym-msg-${messageId}-file-${file.name || 'att'}`,
             fileUrl: file.url,
             fileName: file.name || 'attachment',
             createdAt: createdAt || new Date().toISOString(),
@@ -80,7 +74,6 @@ const inbound = {
       }
     }
 
-    // Текст (или если нет вложений)
     if (text || attachments.length === 0) {
       const result = await retailcrm.sendMessage({
         channelId: channel.mg_channel_id,
@@ -108,16 +101,10 @@ const inbound = {
     }
   },
 
-  /**
-   * Обработка сообщения из Маркета
-   */
   async handleNewMessage(chatId, messageData, customerInfo) {
     const { messageId, message, sender, createdAt, payload: msgPayload } = messageData;
 
-    // Дедупликация
-    if (storage.getMessageByMarketId(String(messageId))) {
-      return;
-    }
+    if (storage.getMessageByMarketId(String(messageId))) return;
 
     let channel = storage.getChannelByMarketChatId(String(chatId));
     if (!channel) {
@@ -125,15 +112,13 @@ const inbound = {
     }
 
     await this.forwardMessage(channel, chatId, messageId, message, createdAt, sender, customerInfo, msgPayload);
-
-    // Обновляем последний messageId
     storage.setLastMessageId(String(chatId), messageId);
   },
 
-  /**
-   * Инкрементальная синхронизация — только новые сообщения
-   */
   async syncChats() {
+    if (syncing) return;
+    syncing = true;
+
     try {
       const response = await ym.getChats({
         statuses: ['WAITING_FOR_PARTNER', 'NEW', 'WAITING_FOR_CUSTOMER'],
@@ -148,7 +133,6 @@ const inbound = {
 
         await this.handleNewChat(chatId, type, orderId);
 
-        // Загружаем только новые сообщения (после последнего известного)
         const lastMsgId = storage.getLastMessageId(String(chatId));
         const historyParams = { limit: 50 };
         if (lastMsgId) {
@@ -158,29 +142,26 @@ const inbound = {
         const history = await ym.getChatHistory(chatId, historyParams);
         const messages = history.messages || history.result?.messages || [];
 
-        // Фильтруем — messageIdFrom включает само сообщение, пропускаем его
         const newMessages = lastMsgId
           ? messages.filter(m => m.messageId !== lastMsgId)
           : messages;
 
         if (newMessages.length > 0) {
-          logger.info('New messages in chat', { chatId, count: newMessages.length });
+          logger.info('New messages', { chatId, count: newMessages.length });
         }
 
         for (const msg of newMessages) {
           try {
             await this.handleNewMessage(chatId, msg, customerInfo);
           } catch (err) {
-            logger.error('Error processing message', {
-              chatId,
-              messageId: msg.messageId,
-              error: err.message,
-            });
+            logger.error('Error processing msg', { chatId, messageId: msg.messageId, error: err.message });
           }
         }
       }
     } catch (err) {
       logger.error('Error syncing chats', { error: err.message });
+    } finally {
+      syncing = false;
     }
   },
 };
