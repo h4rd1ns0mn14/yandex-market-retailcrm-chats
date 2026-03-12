@@ -1,75 +1,88 @@
-const Database = require('better-sqlite3');
+const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
 
-const db = new Database(path.join(__dirname, '..', 'data.db'));
+const dbPath = path.join(__dirname, '..', 'data.json');
 
-// Создаём таблицы
-db.exec(`
-  CREATE TABLE IF NOT EXISTS channels (
-    market_chat_id TEXT PRIMARY KEY,
-    mg_channel_id  INTEGER,
-    mg_external_id TEXT,
-    chat_type      TEXT,
-    order_id       TEXT,
-    created_at     TEXT DEFAULT (datetime('now'))
-  );
+// Инициализация структуры данных
+function loadDb() {
+  try {
+    if (fs.existsSync(dbPath)) {
+      const data = fs.readFileSync(dbPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    logger.error('Error loading DB', { error: err.message });
+  }
+  
+  return {
+    channels: {},
+    messages: {},
+    mgConfig: {},
+  };
+}
 
-  CREATE TABLE IF NOT EXISTS messages (
-    market_message_id TEXT PRIMARY KEY,
-    mg_message_id     INTEGER,
-    market_chat_id    TEXT,
-    direction         TEXT,
-    created_at        TEXT DEFAULT (datetime('now'))
-  );
+function saveDb(data) {
+  try {
+    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+  } catch (err) {
+    logger.error('Error saving DB', { error: err.message });
+  }
+}
 
-  CREATE TABLE IF NOT EXISTS mg_config (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-  );
-`);
+// Глобальный объект данных
+let db = loadDb();
 
 const storage = {
   // ===== Каналы =====
   getChannelByMarketChatId(marketChatId) {
-    return db.prepare('SELECT * FROM channels WHERE market_chat_id = ?').get(marketChatId);
+    return db.channels[marketChatId] || null;
   },
 
   getChannelByMgExternalId(externalId) {
-    return db.prepare('SELECT * FROM channels WHERE mg_external_id = ?').get(externalId);
+    return Object.values(db.channels).find(ch => ch.mg_external_id === externalId) || null;
   },
 
   saveChannel({ marketChatId, mgChannelId, mgExternalId, chatType, orderId }) {
-    db.prepare(`
-      INSERT OR REPLACE INTO channels (market_chat_id, mg_channel_id, mg_external_id, chat_type, order_id)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(marketChatId, mgChannelId, mgExternalId, chatType, orderId);
+    db.channels[marketChatId] = {
+      market_chat_id: marketChatId,
+      mg_channel_id: mgChannelId,
+      mg_external_id: mgExternalId,
+      chat_type: chatType,
+      order_id: orderId,
+      created_at: new Date().toISOString(),
+    };
+    saveDb(db);
   },
 
   // ===== Сообщения =====
   getMessageByMarketId(marketMessageId) {
-    return db.prepare('SELECT * FROM messages WHERE market_message_id = ?').get(marketMessageId);
+    return db.messages[marketMessageId] || null;
   },
 
   getMessageByMgId(mgMessageId) {
-    return db.prepare('SELECT * FROM messages WHERE mg_message_id = ?').get(String(mgMessageId));
+    return Object.values(db.messages).find(msg => msg.mg_message_id === String(mgMessageId)) || null;
   },
 
   saveMessage({ marketMessageId, mgMessageId, marketChatId, direction }) {
-    db.prepare(`
-      INSERT OR REPLACE INTO messages (market_message_id, mg_message_id, market_chat_id, direction)
-      VALUES (?, ?, ?, ?)
-    `).run(marketMessageId, String(mgMessageId), marketChatId, direction);
+    db.messages[marketMessageId] = {
+      market_message_id: marketMessageId,
+      mg_message_id: String(mgMessageId),
+      market_chat_id: marketChatId,
+      direction,
+      created_at: new Date().toISOString(),
+    };
+    saveDb(db);
   },
 
   // ===== MG Config =====
   getMgConfig(key) {
-    const row = db.prepare('SELECT value FROM mg_config WHERE key = ?').get(key);
-    return row ? row.value : null;
+    return db.mgConfig[key] || null;
   },
 
   setMgConfig(key, value) {
-    db.prepare('INSERT OR REPLACE INTO mg_config (key, value) VALUES (?, ?)').run(key, value);
+    db.mgConfig[key] = value;
+    saveDb(db);
   },
 };
 
