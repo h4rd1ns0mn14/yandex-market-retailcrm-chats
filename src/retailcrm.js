@@ -157,7 +157,8 @@ const retailcrm = {
       name: name || 'Yandex Market',
       settings: {
         text: { creating: 'both', editing: 'receive', quoting: 'receive', deleting: 'receive' },
-        file: { max_files_count: 1 },
+        file: { creating: 'both', max_files_count: 10 },
+        image: { creating: 'both', max_files_count: 10 },
       },
       external_id: externalId,
       avatar_url: avatarUrl || 'https://yastatic.net/market-export/_/i/favicon/yandex-market-32.png',

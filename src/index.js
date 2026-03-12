@@ -68,8 +68,24 @@ async function start() {
       logger.info(`Webhook URLs: ${config.baseUrl}/webhook/market | ${config.baseUrl}/webhook/retailcrm`);
     });
 
-    // Первичная полная синхронизация
+    // Обновляем настройки существующих каналов (file/image support)
     setTimeout(async () => {
+      try {
+        const channels = storage.getAllChannels();
+        for (const ch of channels) {
+          try {
+            await retailcrm.updateChannel(ch.mg_channel_id, {
+              settings: {
+                text: { creating: 'both', editing: 'receive', quoting: 'receive', deleting: 'receive' },
+                file: { creating: 'both', max_files_count: 10 },
+                image: { creating: 'both', max_files_count: 10 },
+              },
+            });
+          } catch (e) { /* ignore */ }
+        }
+        logger.info('Channels updated with file support');
+      } catch (e) { /* ignore */ }
+
       logger.info('Running initial sync...');
       await inbound.syncChats();
     }, 3000);

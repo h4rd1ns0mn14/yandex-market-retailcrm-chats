@@ -54,6 +54,10 @@ const storage = {
     return db.channels[marketChatId] || null;
   },
 
+  getAllChannels() {
+    return Object.values(db.channels);
+  },
+
   getChannelByMgExternalId(externalId) {
     return Object.values(db.channels).find(ch => ch.mg_external_id === externalId) || null;
   },
