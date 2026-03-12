@@ -8,9 +8,14 @@ const outbound = {
     logger.info('MG Webhook', { type: eventType });
 
     switch (eventType) {
-      case 'message_sent':
-        await this.handleMessageSent(event.data || event.Data || event);
+      case 'message_sent': {
+        let msgData = event.data || event.Data || event;
+        if (typeof msgData === 'string') {
+          msgData = JSON.parse(msgData);
+        }
+        await this.handleMessageSent(msgData);
         break;
+      }
       case 'message_updated':
       case 'message_deleted':
       case 'message_read':
