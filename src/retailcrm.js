@@ -226,32 +226,48 @@ const retailcrm = {
   async sendFileMessage({ channelId, externalChatId, externalMessageId, fileUrl, fileName, createdAt, customer, originator }) {
     const mg = getMgClient();
 
-    // Сначала загружаем файл по URL
-    const uploadRes = await mg.post('/files/upload_by_url', {
-      url: fileUrl,
-    });
+    try {
+      // Сначала загружаем файл по URL
+      logger.info('Uploading file to MG', { fileUrl: fileUrl?.substring(0, 100), fileName });
+      const uploadRes = await mg.post('/files/upload_by_url', {
+        url: fileUrl,
+      });
+      logger.info('File uploaded to MG', { fileId: uploadRes.data?.id });
 
-    const payload = {
-      channel: channelId,
-      external_chat_id: externalChatId,
-      originator: originator || 'customer',
-      message: {
-        external_id: externalMessageId,
-        type: 'file',
-        file: {
-          id: uploadRes.data.id,
-          name: fileName,
+      const payload = {
+        channel: channelId,
+        external_chat_id: externalChatId,
+        originator: originator || 'customer',
+        message: {
+          external_id: externalMessageId,
+          type: 'file',
+          file: {
+            id: uploadRes.data.id,
+            name: fileName,
+          },
+          created_at: createdAt || new Date().toISOString(),
         },
-        created_at: createdAt || new Date().toISOString(),
-      },
-      customer: {
-        external_id: customer.externalId,
-        nickname: customer.nickname || 'Покупатель',
-      },
-    };
+        customer: {
+          external_id: customer.externalId,
+          nickname: customer.nickname || 'Покупатель',
+        },
+      };
 
-    const { data } = await mg.post('/messages', payload);
-    return data;
+      const { data } = await mg.post('/messages', payload);
+      return data;
+    } catch (err) {
+      const errMsg = err.response?.data?.errors?.[0] || '';
+      if (err.response?.status === 400 && errMsg.includes('already exists')) {
+        logger.info('File message already exists in MG, skipping', { externalMessageId });
+        return { message_id: 0 };
+      }
+      logger.error('MG sendFileMessage failed', {
+        status: err.response?.status,
+        responseData: err.response?.data,
+        fileUrl: fileUrl?.substring(0, 100),
+      });
+      throw err;
+    }
   },
 
   /**

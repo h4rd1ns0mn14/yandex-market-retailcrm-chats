@@ -58,6 +58,9 @@ const inbound = {
 
     // Вложения (фото/файлы)
     const attachments = msgPayload || [];
+    if (attachments.length > 0) {
+      logger.info('Message has attachments', { messageId, attachments: JSON.stringify(attachments).substring(0, 500) });
+    }
     if (attachments.length > 0 && attachments[0].url) {
       for (const file of attachments) {
         try {
