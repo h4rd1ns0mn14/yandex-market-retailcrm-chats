@@ -47,7 +47,21 @@ const retailcrm = {
    * Регистрация транспортного модуля в RetailCRM
    */
   async registerModule() {
+    // Проверка переменных окружения
+    if (!config.retailcrm.apiKey) {
+      throw new Error('RETAILCRM_API_KEY is not set');
+    }
+    if (!config.baseUrl) {
+      throw new Error('BASE_URL is not set');
+    }
+
     const webhookUrl = `${config.baseUrl}/webhook/retailcrm`;
+
+    logger.info('Registering integration module', { 
+      webhookUrl, 
+      code: config.module.code,
+      retailcrmUrl: config.retailcrm.url 
+    });
 
     // Минимальная конфигурация для mgTransport
     const crmUrl = config.retailcrm.url || 'https://rikor.retailcrm.ru';
@@ -63,8 +77,6 @@ const retailcrm = {
       },
     };
 
-    logger.info('Registering integration module', { webhookUrl, code: config.module.code });
-
     // RetailCRM требует integrationModule как JSON string в form-urlencoded
     const payload = new URLSearchParams();
     payload.append('integrationModule', JSON.stringify(moduleData));
@@ -75,7 +87,10 @@ const retailcrm = {
         payload.toString(),
         {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          params: { apiKey: config.retailcrm.apiKey },
+          params: { 
+            apiKey: config.retailcrm.apiKey,
+            _format: 'json'
+          },
         }
       );
 
@@ -104,7 +119,10 @@ const retailcrm = {
           const { data } = await crmClient.get(
             `/api/v5/integration-modules/${config.module.code}`,
             {
-              params: { apiKey: config.retailcrm.apiKey },
+              params: { 
+                apiKey: config.retailcrm.apiKey,
+                _format: 'json'
+              },
             }
           );
 
