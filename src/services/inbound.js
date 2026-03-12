@@ -43,6 +43,19 @@ const inbound = {
 
     if (isFromMarket) return;
 
+    // Пропускаем сообщения PARTNER — они отправлены нами из CRM или из кабинета Маркета
+    const isFromPartner = sender === 'PARTNER';
+    if (isFromPartner) {
+      // Просто сохраняем для дедупликации, не отправляем в CRM
+      storage.saveMessage({
+        marketMessageId: String(messageId),
+        mgMessageId: 0,
+        marketChatId: String(chatId),
+        direction: 'outbound',
+      });
+      return;
+    }
+
     const customer = {
       externalId: `ym-buyer-${chatId}`,
       nickname: customerInfo?.name || 'Покупатель',
