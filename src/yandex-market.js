@@ -5,7 +5,7 @@ const logger = require('./logger');
 const client = axios.create({
   baseURL: `${config.yandexMarket.apiBase}/v2/businesses/${config.yandexMarket.businessId}`,
   headers: {
-    'Authorization': `Bearer ${config.yandexMarket.oauthToken}`,
+    'Api-Key': config.yandexMarket.oauthToken,
     'Content-Type': 'application/json',
   },
   timeout: 15000,
