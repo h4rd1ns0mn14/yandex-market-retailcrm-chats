@@ -35,10 +35,11 @@ const inbound = {
     return channel;
   },
 
-  async forwardMessage(channel, chatId, messageId, text, createdAt, sender, customerInfo, msgPayload) {
+  async forwardMessage(channel, chatId, messageId, text, createdAt, sender, customerInfo, msgPayload, isHistorical) {
     const isFromBuyer = sender === 'CUSTOMER' || sender === 'BUYER' || sender === 'USER';
     const isFromMarket = sender === 'MARKET' || sender === 'SUPPORT';
-    const originator = isFromBuyer ? 'customer' : 'channel';
+    // Исторические сообщения всегда channel чтобы не триггерить уведомления
+    const originator = (isFromBuyer && !isHistorical) ? 'customer' : 'channel';
 
     if (isFromMarket) return;
 
@@ -58,7 +59,7 @@ const inbound = {
     // Формируем текст с вложениями
     let fullText = text || '';
     if (attachments.length > 0 && attachments[0].url) {
-      const fileLinks = attachments.map(f => `📎 ${f.name || 'Вложение'}`).join('\n');
+      const fileLinks = attachments.map(f => `📎 ${f.name || 'Вложение'}: ${f.url}`).join('\n');
       fullText = fullText ? `${fullText}\n\n${fileLinks}` : fileLinks;
     }
 
@@ -89,7 +90,7 @@ const inbound = {
     }
   },
 
-  async handleNewMessage(chatId, messageData, customerInfo) {
+  async handleNewMessage(chatId, messageData, customerInfo, isHistorical) {
     const { messageId, message, sender, createdAt, payload: msgPayload } = messageData;
 
     if (storage.getMessageByMarketId(String(messageId))) return;
@@ -99,7 +100,7 @@ const inbound = {
       channel = await this.handleNewChat(chatId, null, null);
     }
 
-    await this.forwardMessage(channel, chatId, messageId, message, createdAt, sender, customerInfo, msgPayload);
+    await this.forwardMessage(channel, chatId, messageId, message, createdAt, sender, customerInfo, msgPayload, isHistorical);
     storage.setLastMessageId(String(chatId), messageId);
   },
 
@@ -122,6 +123,7 @@ const inbound = {
         await this.handleNewChat(chatId, type, orderId);
 
         const lastMsgId = storage.getLastMessageId(String(chatId));
+        const isHistorical = !lastMsgId; // первая загрузка = историческая
         const historyParams = { limit: 50 };
         if (lastMsgId) {
           historyParams.messageIdFrom = lastMsgId;
@@ -135,12 +137,12 @@ const inbound = {
           : messages;
 
         if (newMessages.length > 0) {
-          logger.info('New messages', { chatId, count: newMessages.length });
+          logger.info('New messages', { chatId, count: newMessages.length, historical: isHistorical });
         }
 
         for (const msg of newMessages) {
           try {
-            await this.handleNewMessage(chatId, msg, customerInfo);
+            await this.handleNewMessage(chatId, msg, customerInfo, isHistorical);
           } catch (err) {
             logger.error('Error processing msg', { chatId, messageId: msg.messageId, error: err.message });
           }
