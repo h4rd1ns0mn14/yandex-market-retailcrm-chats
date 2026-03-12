@@ -32,8 +32,13 @@ function getMgClient() {
     throw new Error('MG Transport API not configured. Run registerModule() first.');
   }
 
+  // endpointUrl from RetailCRM is base domain, need to add API path
+  const baseURL = endpointUrl.includes('/api/transport/')
+    ? endpointUrl
+    : `${endpointUrl.replace(/\/+$/, '')}/api/transport/v1`;
+
   return axios.create({
-    baseURL: endpointUrl,
+    baseURL,
     headers: {
       'X-Transport-Token': token,
       'Content-Type': 'application/json',
