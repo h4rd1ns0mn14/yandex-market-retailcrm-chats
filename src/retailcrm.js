@@ -205,6 +205,12 @@ const retailcrm = {
       logger.info('Message sent to MG', { messageId: data.message_id, externalMessageId });
       return data;
     } catch (err) {
+      // Дубликат — сообщение уже есть в MG, считаем ок
+      const errMsg = err.response?.data?.errors?.[0] || '';
+      if (err.response?.status === 400 && errMsg.includes('already exists')) {
+        logger.info('Message already exists in MG, skipping', { externalMessageId });
+        return { message_id: 0 };
+      }
       logger.error('MG sendMessage failed', {
         status: err.response?.status,
         responseData: err.response?.data,
