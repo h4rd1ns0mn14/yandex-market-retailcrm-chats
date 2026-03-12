@@ -179,12 +179,13 @@ const retailcrm = {
   /**
    * Отправить сообщение в MG (входящее от покупателя)
    */
-  async sendMessage({ channelId, externalChatId, externalMessageId, text, createdAt, customer }) {
+  async sendMessage({ channelId, externalChatId, externalMessageId, text, createdAt, customer, originator }) {
     const mg = getMgClient();
 
     const payload = {
       channel: channelId,
       external_chat_id: externalChatId,
+      originator: originator || 'customer',
       message: {
         external_id: externalMessageId,
         type: 'text',
@@ -216,7 +217,7 @@ const retailcrm = {
   /**
    * Отправить файл-сообщение в MG
    */
-  async sendFileMessage({ channelId, externalChatId, externalMessageId, fileUrl, fileName, createdAt, customer }) {
+  async sendFileMessage({ channelId, externalChatId, externalMessageId, fileUrl, fileName, createdAt, customer, originator }) {
     const mg = getMgClient();
 
     // Сначала загружаем файл по URL
@@ -227,6 +228,7 @@ const retailcrm = {
     const payload = {
       channel: channelId,
       external_chat_id: externalChatId,
+      originator: originator || 'customer',
       message: {
         external_id: externalMessageId,
         type: 'file',

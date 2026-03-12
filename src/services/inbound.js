@@ -11,7 +11,6 @@ const inbound = {
   async handleNewChat(chatId, chatType, orderId) {
     logger.info('New chat from Market', { chatId, chatType, orderId });
 
-    // Проверяем, есть ли уже канал
     let channel = storage.getChannelByMarketChatId(String(chatId));
 
     if (!channel) {
@@ -20,7 +19,6 @@ const inbound = {
         ? `Маркет: Заказ ${orderId}`
         : `Маркет: Чат ${chatId}`;
 
-      // Создаём канал в MG
       const result = await retailcrm.activateChannel({
         externalId,
         name: channelName,
@@ -42,9 +40,98 @@ const inbound = {
   },
 
   /**
+   * Отправить сообщение в MG с правильным originator
+   */
+  async forwardMessage(channel, chatId, messageId, text, createdAt, sender, customerInfo, msgPayload) {
+    const isFromBuyer = sender === 'CUSTOMER' || sender === 'BUYER' || sender === 'USER';
+    const isFromMarket = sender === 'MARKET' || sender === 'SUPPORT';
+    const originator = isFromBuyer ? 'customer' : 'channel';
+
+    // Для системных сообщений Маркета — пропускаем
+    if (isFromMarket) {
+      logger.info('System message from Market, skipping', { messageId, sender });
+      return;
+    }
+
+    const customer = {
+      externalId: `ym-buyer-${chatId}`,
+      nickname: customerInfo?.name || 'Покупатель',
+      firstName: customerInfo?.name || 'Покупатель',
+      lastName: '',
+    };
+
+    // Вложения (фото/файлы)
+    const attachments = msgPayload || [];
+    if (attachments.length > 0 && attachments[0].url) {
+      for (const file of attachments) {
+        try {
+          await retailcrm.sendFileMessage({
+            channelId: channel.mg_channel_id,
+            externalChatId: channel.mg_external_id,
+            externalMessageId: `ym-msg-${messageId}-file-${file.name || 'attachment'}`,
+            fileUrl: file.url,
+            fileName: file.name || 'attachment',
+            createdAt: createdAt || new Date().toISOString(),
+            customer,
+            originator,
+          });
+          logger.info('File forwarded to RetailCRM', { messageId, fileName: file.name, originator });
+        } catch (err) {
+          logger.error('Error forwarding file to RetailCRM', { messageId, fileName: file.name, error: err.message });
+        }
+      }
+
+      if (text) {
+        const result = await retailcrm.sendMessage({
+          channelId: channel.mg_channel_id,
+          externalChatId: channel.mg_external_id,
+          externalMessageId: `ym-msg-${messageId}`,
+          text,
+          createdAt: createdAt || new Date().toISOString(),
+          customer,
+          originator,
+        });
+        storage.saveMessage({
+          marketMessageId: String(messageId),
+          mgMessageId: result.message_id,
+          marketChatId: String(chatId),
+          direction: isFromBuyer ? 'inbound' : 'outbound',
+        });
+      } else {
+        storage.saveMessage({
+          marketMessageId: String(messageId),
+          mgMessageId: 0,
+          marketChatId: String(chatId),
+          direction: isFromBuyer ? 'inbound' : 'outbound',
+        });
+      }
+    } else {
+      // Только текст
+      const result = await retailcrm.sendMessage({
+        channelId: channel.mg_channel_id,
+        externalChatId: channel.mg_external_id,
+        externalMessageId: `ym-msg-${messageId}`,
+        text: text || '[Без текста]',
+        createdAt: createdAt || new Date().toISOString(),
+        customer,
+        originator,
+      });
+
+      storage.saveMessage({
+        marketMessageId: String(messageId),
+        mgMessageId: result.message_id,
+        marketChatId: String(chatId),
+        direction: isFromBuyer ? 'inbound' : 'outbound',
+      });
+
+      logger.info('Message forwarded to RetailCRM', { messageId, originator, sender });
+    }
+  },
+
+  /**
    * Обработка нового сообщения из Маркета
    */
-  async handleNewMessage(chatId, messageData) {
+  async handleNewMessage(chatId, messageData, customerInfo) {
     const { messageId, message, sender, createdAt, payload: msgPayload } = messageData;
 
     logger.info('New message from Market', { chatId, messageId, sender, message: message?.substring(0, 100) });
@@ -52,7 +139,6 @@ const inbound = {
     // Дедупликация
     const existing = storage.getMessageByMarketId(String(messageId));
     if (existing) {
-      logger.info('Message already processed, skipping', { messageId });
       return;
     }
 
@@ -62,94 +148,11 @@ const inbound = {
       channel = await this.handleNewChat(chatId, null, null);
     }
 
-    // Определяем, от кого сообщение
-    const isFromBuyer = sender === 'CUSTOMER' || sender === 'BUYER' || sender === 'USER';
-
-    if (!isFromBuyer) {
-      // Сообщение от продавца — уже отправлено из CRM, пропускаем
-      logger.info('Message from seller, skipping inbound', { messageId });
-      return;
-    }
-
-    const customer = {
-      externalId: `ym-buyer-${chatId}`,
-      nickname: 'Покупатель',
-      firstName: 'Покупатель',
-      lastName: 'Маркет',
-    };
-
-    // Проверяем вложения (фото/файлы)
-    const attachments = msgPayload || [];
-
-    if (attachments.length > 0 && attachments[0].url) {
-      // Отправляем каждое вложение как файл
-      for (const file of attachments) {
-        try {
-          const result = await retailcrm.sendFileMessage({
-            channelId: channel.mg_channel_id,
-            externalChatId: channel.mg_external_id,
-            externalMessageId: `ym-msg-${messageId}-file-${file.name || 'attachment'}`,
-            fileUrl: file.url,
-            fileName: file.name || 'attachment',
-            createdAt: createdAt || new Date().toISOString(),
-            customer,
-          });
-          logger.info('File forwarded to RetailCRM', { messageId, fileName: file.name });
-        } catch (err) {
-          logger.error('Error forwarding file to RetailCRM', { messageId, fileName: file.name, error: err.message });
-        }
-      }
-
-      // Если есть и текст и вложение — отправляем текст отдельно
-      if (message) {
-        const result = await retailcrm.sendMessage({
-          channelId: channel.mg_channel_id,
-          externalChatId: channel.mg_external_id,
-          externalMessageId: `ym-msg-${messageId}`,
-          text: message,
-          createdAt: createdAt || new Date().toISOString(),
-          customer,
-        });
-        storage.saveMessage({
-          marketMessageId: String(messageId),
-          mgMessageId: result.message_id,
-          marketChatId: String(chatId),
-          direction: 'inbound',
-        });
-        logger.info('Message forwarded to RetailCRM', { messageId, mgMessageId: result.message_id });
-      } else {
-        // Сохраняем запись без текста
-        storage.saveMessage({
-          marketMessageId: String(messageId),
-          mgMessageId: 0,
-          marketChatId: String(chatId),
-          direction: 'inbound',
-        });
-      }
-    } else {
-      // Только текст
-      const result = await retailcrm.sendMessage({
-        channelId: channel.mg_channel_id,
-        externalChatId: channel.mg_external_id,
-        externalMessageId: `ym-msg-${messageId}`,
-        text: message || '[Без текста]',
-        createdAt: createdAt || new Date().toISOString(),
-        customer,
-      });
-
-      storage.saveMessage({
-        marketMessageId: String(messageId),
-        mgMessageId: result.message_id,
-        marketChatId: String(chatId),
-        direction: 'inbound',
-      });
-
-      logger.info('Message forwarded to RetailCRM', { messageId, mgMessageId: result.message_id });
-    }
+    await this.forwardMessage(channel, chatId, messageId, message, createdAt, sender, customerInfo, msgPayload);
   },
 
   /**
-   * Полный sync: забираем все чаты WAITING_FOR_PARTNER и их историю
+   * Полный sync: забираем все чаты и их историю
    */
   async syncPendingChats() {
     logger.info('Syncing pending chats from Market...');
@@ -163,8 +166,9 @@ const inbound = {
       logger.info(`Found ${chats.length} pending chats`);
 
       for (const chat of chats) {
-        const { chatId, type, order } = chat;
+        const { chatId, type, order, context } = chat;
         const orderId = order?.orderId || null;
+        const customerInfo = context?.customer || null;
 
         await this.handleNewChat(chatId, type, orderId);
 
@@ -174,7 +178,7 @@ const inbound = {
 
         for (const msg of messages) {
           try {
-            await this.handleNewMessage(chatId, msg);
+            await this.handleNewMessage(chatId, msg, customerInfo);
           } catch (err) {
             logger.error('Error processing history message', {
               chatId,

@@ -48,10 +48,10 @@ const outbound = {
       return;
     }
 
-    // Пропускаем сообщения от бота/системы — только от оператора
+    // Пропускаем сообщения от покупателя (они пришли через наш же транспорт)
     const originator = data.originator || data.Originator;
-    if (originator && originator !== 'manager') {
-      logger.info('Message not from manager, skipping outbound', { originator });
+    if (originator === 'customer') {
+      logger.info('Message from customer originator, skipping outbound', { originator });
       return;
     }
 
