@@ -10,7 +10,13 @@ const logger = require('../logger');
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
-    logger.info('Market webhook received', { type: body.notificationType, body });
+    logger.info('Market webhook received', { type: body?.notificationType || body?.type });
+
+    // Обработка PING от Яндекс.Маркета
+    if (body?.notificationType === 'PING' || body?.type === 'PING') {
+      logger.info('PING received, responding OK');
+      return res.json({ status: 'ok' });
+    }
 
     const notificationType = body.notificationType || body.type;
 
