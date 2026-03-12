@@ -78,24 +78,74 @@ const inbound = {
       lastName: 'Маркет',
     };
 
-    // Отправляем в RetailCRM
-    const result = await retailcrm.sendMessage({
-      channelId: channel.mg_channel_id,
-      externalChatId: channel.mg_external_id,
-      externalMessageId: `ym-msg-${messageId}`,
-      text: message || '[Без текста]',
-      createdAt: createdAt || new Date().toISOString(),
-      customer,
-    });
+    // Проверяем вложения (фото/файлы)
+    const attachments = msgPayload || [];
 
-    storage.saveMessage({
-      marketMessageId: String(messageId),
-      mgMessageId: result.message_id,
-      marketChatId: String(chatId),
-      direction: 'inbound',
-    });
+    if (attachments.length > 0 && attachments[0].url) {
+      // Отправляем каждое вложение как файл
+      for (const file of attachments) {
+        try {
+          const result = await retailcrm.sendFileMessage({
+            channelId: channel.mg_channel_id,
+            externalChatId: channel.mg_external_id,
+            externalMessageId: `ym-msg-${messageId}-file-${file.name || 'attachment'}`,
+            fileUrl: file.url,
+            fileName: file.name || 'attachment',
+            createdAt: createdAt || new Date().toISOString(),
+            customer,
+          });
+          logger.info('File forwarded to RetailCRM', { messageId, fileName: file.name });
+        } catch (err) {
+          logger.error('Error forwarding file to RetailCRM', { messageId, fileName: file.name, error: err.message });
+        }
+      }
 
-    logger.info('Message forwarded to RetailCRM', { messageId, mgMessageId: result.message_id });
+      // Если есть и текст и вложение — отправляем текст отдельно
+      if (message) {
+        const result = await retailcrm.sendMessage({
+          channelId: channel.mg_channel_id,
+          externalChatId: channel.mg_external_id,
+          externalMessageId: `ym-msg-${messageId}`,
+          text: message,
+          createdAt: createdAt || new Date().toISOString(),
+          customer,
+        });
+        storage.saveMessage({
+          marketMessageId: String(messageId),
+          mgMessageId: result.message_id,
+          marketChatId: String(chatId),
+          direction: 'inbound',
+        });
+        logger.info('Message forwarded to RetailCRM', { messageId, mgMessageId: result.message_id });
+      } else {
+        // Сохраняем запись без текста
+        storage.saveMessage({
+          marketMessageId: String(messageId),
+          mgMessageId: 0,
+          marketChatId: String(chatId),
+          direction: 'inbound',
+        });
+      }
+    } else {
+      // Только текст
+      const result = await retailcrm.sendMessage({
+        channelId: channel.mg_channel_id,
+        externalChatId: channel.mg_external_id,
+        externalMessageId: `ym-msg-${messageId}`,
+        text: message || '[Без текста]',
+        createdAt: createdAt || new Date().toISOString(),
+        customer,
+      });
+
+      storage.saveMessage({
+        marketMessageId: String(messageId),
+        mgMessageId: result.message_id,
+        marketChatId: String(chatId),
+        direction: 'inbound',
+      });
+
+      logger.info('Message forwarded to RetailCRM', { messageId, mgMessageId: result.message_id });
+    }
   },
 
   /**
@@ -106,7 +156,7 @@ const inbound = {
 
     try {
       const response = await ym.getChats({
-        statuses: ['WAITING_FOR_PARTNER'],
+        statuses: ['WAITING_FOR_PARTNER', 'NEW', 'WAITING_FOR_CUSTOMER'],
       });
 
       const chats = response.chats || response.result?.chats || [];

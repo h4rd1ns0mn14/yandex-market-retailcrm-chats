@@ -62,14 +62,14 @@ async function start() {
       await inbound.syncPendingChats();
     }, 5000);
 
-    // 4. Периодическая синхронизация (каждые 2 минуты)
+    // 4. Периодическая синхронизация (каждые 30 секунд)
     setInterval(async () => {
       try {
         await inbound.syncPendingChats();
       } catch (err) {
         logger.error('Periodic sync error', { error: err.message });
       }
-    }, 2 * 60 * 1000);
+    }, 30 * 1000);
 
   } catch (err) {
     logger.error('Failed to start', { error: err.message, stack: err.stack });

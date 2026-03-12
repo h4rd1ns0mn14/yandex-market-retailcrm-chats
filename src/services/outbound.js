@@ -7,11 +7,13 @@ const outbound = {
    * Обработка webhook от Message Gateway (сообщение от оператора)
    */
   async handleMgWebhook(event) {
-    logger.info('MG Webhook received', { type: event.type });
+    logger.info('MG Webhook received', { type: event.type, data: JSON.stringify(event.data || event).substring(0, 500) });
 
-    switch (event.type) {
+    const eventType = event.type || event.Type;
+
+    switch (eventType) {
       case 'message_sent':
-        await this.handleMessageSent(event.data);
+        await this.handleMessageSent(event.data || event.Data || event);
         break;
 
       case 'message_updated':
@@ -27,7 +29,7 @@ const outbound = {
         break;
 
       default:
-        logger.info('Unknown MG event type', { type: event.type });
+        logger.info('Unknown MG event type', { type: eventType, body: JSON.stringify(event).substring(0, 500) });
     }
   },
 
@@ -35,57 +37,72 @@ const outbound = {
    * Отправить сообщение оператора в Маркет
    */
   async handleMessageSent(data) {
-    const { channel_id, external_chat_id, message } = data;
+    logger.info('handleMessageSent data', { data: JSON.stringify(data).substring(0, 500) });
 
-    if (!message || !external_chat_id) {
-      logger.warn('Missing message or external_chat_id in MG webhook');
+    const externalChatId = data.external_chat_id || data.ExternalChatID;
+    const message = data.message || data.Message;
+    const channelId = data.channel || data.channel_id || data.Channel;
+
+    if (!message || !externalChatId) {
+      logger.warn('Missing message or external_chat_id in MG webhook', { externalChatId, hasMessage: !!message });
+      return;
+    }
+
+    // Пропускаем сообщения от бота/системы — только от оператора
+    const originator = data.originator || data.Originator;
+    if (originator && originator !== 'manager') {
+      logger.info('Message not from manager, skipping outbound', { originator });
       return;
     }
 
     // Ищем канал по external_id
-    const channel = storage.getChannelByMgExternalId(external_chat_id);
+    const channel = storage.getChannelByMgExternalId(externalChatId);
 
     if (!channel) {
-      logger.error('Channel not found for external_chat_id', { external_chat_id });
+      logger.error('Channel not found for external_chat_id', { externalChatId });
       return;
     }
 
     const marketChatId = parseInt(channel.market_chat_id, 10);
 
     // Дедупликация: проверяем, не пришло ли это сообщение из Маркета
-    if (message.external_id && message.external_id.startsWith('ym-msg-')) {
-      logger.info('Message originated from Market, skipping outbound', {
-        externalId: message.external_id,
-      });
+    const extId = message.external_id || message.ExternalID;
+    if (extId && extId.startsWith('ym-msg-')) {
+      logger.info('Message originated from Market, skipping outbound', { externalId: extId });
       return;
     }
 
     try {
-      if (message.type === 'text' && message.text) {
-        const result = await ym.sendMessage(marketChatId, message.text);
+      const msgType = message.type || message.Type || 'text';
+      const msgText = message.text || message.Text;
+
+      if (msgType === 'text' && msgText) {
+        const result = await ym.sendMessage(marketChatId, msgText);
 
         logger.info('Message sent to Market', {
           marketChatId,
-          text: message.text.substring(0, 50),
+          text: msgText.substring(0, 50),
         });
 
         // Сохраняем связку
-        if (result.messageId || result.result?.messageId) {
-          const ymMessageId = result.messageId || result.result?.messageId;
+        const ymMessageId = result.messageId || result.result?.messageId;
+        if (ymMessageId) {
           storage.saveMessage({
             marketMessageId: String(ymMessageId),
-            mgMessageId: message.id || 0,
+            mgMessageId: message.id || message.ID || 0,
             marketChatId: String(marketChatId),
             direction: 'outbound',
           });
         }
-      } else if (message.type === 'file' && message.file) {
-        logger.info('File message from CRM, attempting to forward to Market');
-        // Для файлов нужно скачать из MG и отправить в Маркет
-        // Это требует дополнительной реализации получения файла из MG
-        logger.warn('File forwarding not fully implemented yet');
+      } else if (msgType === 'file' || msgType === 'image') {
+        logger.info('File/image message from CRM, text fallback to Market');
+        // MG файлы не имеют прямого URL для Маркета, отправляем как текст с описанием
+        if (msgText) {
+          await ym.sendMessage(marketChatId, msgText);
+          logger.info('File message text sent to Market', { marketChatId });
+        }
       } else {
-        logger.warn('Unsupported message type from MG', { type: message.type });
+        logger.warn('Unsupported message type from MG', { type: msgType });
       }
     } catch (err) {
       logger.error('Error sending message to Market', {
