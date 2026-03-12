@@ -50,11 +50,12 @@ const retailcrm = {
     const webhookUrl = `${config.baseUrl}/webhook/retailcrm`;
 
     // Минимальная конфигурация для mgTransport
+    const crmUrl = config.retailcrm.url || 'https://rikor.retailcrm.ru';
     const moduleData = {
       code: config.module.code,
       active: true,
       name: config.module.name,
-      clientId: config.retailcrm.url.replace('https://', '').replace('http://', ''),
+      clientId: crmUrl.replace('https://', '').replace('http://', '').replace(/\/$/, ''),
       integrations: {
         mgTransport: {
           webhookUrl,

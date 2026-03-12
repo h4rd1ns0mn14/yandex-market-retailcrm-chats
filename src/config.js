@@ -1,11 +1,12 @@
-require('dotenv').config();
+// dotenv не нужен на Railway - переменные окружения устанавливаются напрямую
+// require('dotenv').config();
 
 module.exports = {
   port: process.env.PORT || 3000,
   baseUrl: process.env.BASE_URL,
 
   retailcrm: {
-    url: process.env.RETAILCRM_URL,
+    url: process.env.RETAILCRM_URL || 'https://rikor.retailcrm.ru',
     apiKey: process.env.RETAILCRM_API_KEY,
   },
 
