@@ -90,6 +90,17 @@ const storage = {
     saveDb(db);
   },
 
+  // ===== Last synced message per chat =====
+  getLastMessageId(marketChatId) {
+    return db.lastMessageIds?.[marketChatId] || null;
+  },
+
+  setLastMessageId(marketChatId, messageId) {
+    if (!db.lastMessageIds) db.lastMessageIds = {};
+    db.lastMessageIds[marketChatId] = messageId;
+    saveDb(db);
+  },
+
   // ===== MG Config =====
   getMgConfig(key) {
     return db.mgConfig[key] || null;

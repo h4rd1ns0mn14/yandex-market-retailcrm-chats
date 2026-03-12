@@ -9,8 +9,6 @@ const inbound = {
    * Обработка нового чата из Маркета
    */
   async handleNewChat(chatId, chatType, orderId) {
-    logger.info('New chat from Market', { chatId, chatType, orderId });
-
     let channel = storage.getChannelByMarketChatId(String(chatId));
 
     if (!channel) {
@@ -33,7 +31,7 @@ const inbound = {
       });
 
       channel = storage.getChannelByMarketChatId(String(chatId));
-      logger.info('Channel created', { channel });
+      logger.info('Channel created', { chatId, mgChannelId: channel.mg_channel_id });
     }
 
     return channel;
@@ -47,9 +45,7 @@ const inbound = {
     const isFromMarket = sender === 'MARKET' || sender === 'SUPPORT';
     const originator = isFromBuyer ? 'customer' : 'channel';
 
-    // Для системных сообщений Маркета — пропускаем
     if (isFromMarket) {
-      logger.info('System message from Market, skipping', { messageId, sender });
       return;
     }
 
@@ -75,43 +71,19 @@ const inbound = {
             customer,
             originator,
           });
-          logger.info('File forwarded to RetailCRM', { messageId, fileName: file.name, originator });
         } catch (err) {
-          logger.error('Error forwarding file to RetailCRM', { messageId, fileName: file.name, error: err.message });
+          logger.error('Error forwarding file', { messageId, error: err.message });
         }
       }
+    }
 
-      if (text) {
-        const result = await retailcrm.sendMessage({
-          channelId: channel.mg_channel_id,
-          externalChatId: channel.mg_external_id,
-          externalMessageId: `ym-msg-${messageId}`,
-          text,
-          createdAt: createdAt || new Date().toISOString(),
-          customer,
-          originator,
-        });
-        storage.saveMessage({
-          marketMessageId: String(messageId),
-          mgMessageId: result.message_id,
-          marketChatId: String(chatId),
-          direction: isFromBuyer ? 'inbound' : 'outbound',
-        });
-      } else {
-        storage.saveMessage({
-          marketMessageId: String(messageId),
-          mgMessageId: 0,
-          marketChatId: String(chatId),
-          direction: isFromBuyer ? 'inbound' : 'outbound',
-        });
-      }
-    } else {
-      // Только текст
+    // Текст (или если нет вложений)
+    if (text || attachments.length === 0) {
       const result = await retailcrm.sendMessage({
         channelId: channel.mg_channel_id,
         externalChatId: channel.mg_external_id,
         externalMessageId: `ym-msg-${messageId}`,
-        text: text || '[Без текста]',
+        text: text || '[Вложение]',
         createdAt: createdAt || new Date().toISOString(),
         customer,
         originator,
@@ -123,47 +95,48 @@ const inbound = {
         marketChatId: String(chatId),
         direction: isFromBuyer ? 'inbound' : 'outbound',
       });
-
-      logger.info('Message forwarded to RetailCRM', { messageId, originator, sender });
+    } else {
+      storage.saveMessage({
+        marketMessageId: String(messageId),
+        mgMessageId: 0,
+        marketChatId: String(chatId),
+        direction: isFromBuyer ? 'inbound' : 'outbound',
+      });
     }
   },
 
   /**
-   * Обработка нового сообщения из Маркета
+   * Обработка сообщения из Маркета
    */
   async handleNewMessage(chatId, messageData, customerInfo) {
     const { messageId, message, sender, createdAt, payload: msgPayload } = messageData;
 
-    logger.info('New message from Market', { chatId, messageId, sender, message: message?.substring(0, 100) });
-
     // Дедупликация
-    const existing = storage.getMessageByMarketId(String(messageId));
-    if (existing) {
+    if (storage.getMessageByMarketId(String(messageId))) {
       return;
     }
 
-    // Получаем или создаём канал
     let channel = storage.getChannelByMarketChatId(String(chatId));
     if (!channel) {
       channel = await this.handleNewChat(chatId, null, null);
     }
 
     await this.forwardMessage(channel, chatId, messageId, message, createdAt, sender, customerInfo, msgPayload);
+
+    // Обновляем последний messageId
+    storage.setLastMessageId(String(chatId), messageId);
   },
 
   /**
-   * Полный sync: забираем все чаты и их историю
+   * Инкрементальная синхронизация — только новые сообщения
    */
-  async syncPendingChats() {
-    logger.info('Syncing pending chats from Market...');
-
+  async syncChats() {
     try {
       const response = await ym.getChats({
         statuses: ['WAITING_FOR_PARTNER', 'NEW', 'WAITING_FOR_CUSTOMER'],
       });
 
       const chats = response.chats || response.result?.chats || [];
-      logger.info(`Found ${chats.length} pending chats`);
 
       for (const chat of chats) {
         const { chatId, type, order, context } = chat;
@@ -172,15 +145,30 @@ const inbound = {
 
         await this.handleNewChat(chatId, type, orderId);
 
-        // Загружаем историю
-        const history = await ym.getChatHistory(chatId, { limit: 50 });
+        // Загружаем только новые сообщения (после последнего известного)
+        const lastMsgId = storage.getLastMessageId(String(chatId));
+        const historyParams = { limit: 50 };
+        if (lastMsgId) {
+          historyParams.messageIdFrom = lastMsgId;
+        }
+
+        const history = await ym.getChatHistory(chatId, historyParams);
         const messages = history.messages || history.result?.messages || [];
 
-        for (const msg of messages) {
+        // Фильтруем — messageIdFrom включает само сообщение, пропускаем его
+        const newMessages = lastMsgId
+          ? messages.filter(m => m.messageId !== lastMsgId)
+          : messages;
+
+        if (newMessages.length > 0) {
+          logger.info('New messages in chat', { chatId, count: newMessages.length });
+        }
+
+        for (const msg of newMessages) {
           try {
             await this.handleNewMessage(chatId, msg, customerInfo);
           } catch (err) {
-            logger.error('Error processing history message', {
+            logger.error('Error processing message', {
               chatId,
               messageId: msg.messageId,
               error: err.message,
@@ -189,7 +177,7 @@ const inbound = {
         }
       }
     } catch (err) {
-      logger.error('Error syncing pending chats', { error: err.message });
+      logger.error('Error syncing chats', { error: err.message });
     }
   },
 };

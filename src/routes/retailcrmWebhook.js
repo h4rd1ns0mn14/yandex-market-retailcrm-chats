@@ -33,4 +33,10 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET для проверки доступности (MG может пинговать)
+router.get('/', (req, res) => {
+  logger.info('RetailCRM webhook GET ping');
+  res.json({ status: 'ok' });
+});
+
 module.exports = router;
