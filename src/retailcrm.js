@@ -261,7 +261,7 @@ const retailcrm = {
         originator: originator || 'customer',
         message: {
           external_id: externalMessageId,
-          type: 'image',
+          type: 'file',
           items: [{
             id: uploadRes.data.id,
             caption: fileName,
