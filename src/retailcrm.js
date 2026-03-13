@@ -243,7 +243,9 @@ const retailcrm = {
 
       // Загружаем в MG через binary upload
       const form = new FormData();
-      form.append('file', buffer, { filename: actualFileName, contentType });
+      const mimeType = contentType || 'application/octet-stream';
+      form.append('file', buffer, { filename: actualFileName, contentType: mimeType });
+      logger.info('Uploading to MG', { actualFileName, mimeType });
 
       const endpointUrl = config.mg.endpointUrl || storage.getMgConfig('endpointUrl');
       const token = config.mg.token || storage.getMgConfig('token');

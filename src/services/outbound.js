@@ -137,8 +137,8 @@ const outbound = {
             logger.info('Downloading file from MG', { fileId, filename });
             const { buffer } = await this.downloadMgFile(fileId);
 
-            await ym.sendFile(marketChatId, buffer, filename);
-            logger.info('File sent to Market', { marketChatId, filename });
+            const sendResult = await ym.sendFile(marketChatId, buffer, filename);
+            logger.info('File sent to Market', { marketChatId, filename, result: JSON.stringify(sendResult).substring(0, 200) });
           } catch (err) {
             logger.error('Error sending file to Market', { error: err.message, response: err.response?.data });
           }
