@@ -228,51 +228,28 @@ const retailcrm = {
     const mg = getMgClient();
 
     try {
-      // Скачиваем файл с авторизацией Маркета
-      const ym = require('./yandex-market');
-      const FormData = require('form-data');
+      // Загружаем файл в MG через upload_by_url (прокси отдаёт правильный Content-Type)
+      const proxyFileId = Buffer.from(fileUrl).toString('base64url');
+      const proxyUrl = `${config.baseUrl}/files/${proxyFileId}`;
+      logger.info('Uploading file to MG via proxy', { fileName, proxyUrl: proxyUrl.substring(0, 120) });
 
-      logger.info('Downloading file from Market', { fileUrl: fileUrl?.substring(0, 100), fileName });
-      const { buffer, contentType } = await ym.downloadFile(fileUrl);
-      logger.info('File downloaded', { size: buffer.length, contentType });
+      const uploadRes = await mg.post('/files/upload_by_url', { url: proxyUrl });
 
-      // Определяем расширение из content-type
-      const extMap = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp', 'application/pdf': '.pdf' };
-      const ext = extMap[contentType] || '';
-      const actualFileName = fileName && fileName !== 'Фото' ? fileName : `photo${ext}`;
-
-      // Загружаем в MG через binary upload
-      const form = new FormData();
-      const mimeType = contentType || 'application/octet-stream';
-      form.append('file', buffer, { filename: actualFileName, contentType: mimeType });
-      logger.info('Uploading to MG', { actualFileName, mimeType });
-
-      const endpointUrl = config.mg.endpointUrl || storage.getMgConfig('endpointUrl');
-      const token = config.mg.token || storage.getMgConfig('token');
-      const baseURL = endpointUrl.includes('/api/transport/')
-        ? endpointUrl
-        : `${endpointUrl.replace(/\/+$/, '')}/api/transport/v1`;
-
-      const uploadRes = await axios.post(`${baseURL}/files/upload`, form, {
-        headers: {
-          ...form.getHeaders(),
-          'X-Transport-Token': token,
-        },
-        timeout: 30000,
-      });
       const fileId = uploadRes.data?.id || uploadRes.data?.file_id;
-      logger.info('File uploaded to MG', { fileId, fullResponse: JSON.stringify(uploadRes.data).substring(0, 200) });
+      const mimeType = uploadRes.data?.mime_type || '';
+      logger.info('File uploaded to MG', { fileId, mimeType, fullResponse: JSON.stringify(uploadRes.data).substring(0, 300) });
 
+      const isImage = mimeType.startsWith('image/');
       const payload = {
         channel: channelId,
         external_chat_id: externalChatId,
         originator: originator || 'customer',
         message: {
           external_id: externalMessageId,
-          type: contentType.startsWith('image/') ? 'image' : 'file',
+          type: isImage ? 'image' : 'file',
           items: [{
             id: fileId,
-            caption: actualFileName,
+            caption: fileName || 'Фото',
           }],
           created_at: createdAt || new Date().toISOString(),
         },
