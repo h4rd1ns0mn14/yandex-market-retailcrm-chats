@@ -258,7 +258,8 @@ const retailcrm = {
         },
         timeout: 30000,
       });
-      logger.info('File uploaded to MG', { fileId: uploadRes.data?.id });
+      const fileId = uploadRes.data?.id || uploadRes.data?.file_id;
+      logger.info('File uploaded to MG', { fileId, fullResponse: JSON.stringify(uploadRes.data).substring(0, 200) });
 
       const payload = {
         channel: channelId,
@@ -268,7 +269,7 @@ const retailcrm = {
           external_id: externalMessageId,
           type: contentType.startsWith('image/') ? 'image' : 'file',
           items: [{
-            id: uploadRes.data.id,
+            id: fileId,
             caption: actualFileName,
           }],
           created_at: createdAt || new Date().toISOString(),
