@@ -12,6 +12,7 @@ module.exports = {
 
   yandexMarket: {
     oauthToken: process.env.YM_OAUTH_TOKEN,
+    oauthUserToken: process.env.YM_OAUTH_USER_TOKEN,
     businessId: process.env.YM_BUSINESS_ID,
     apiBase: process.env.YM_API_BASE || 'https://api.partner.market.yandex.ru',
   },

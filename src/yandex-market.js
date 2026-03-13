@@ -85,8 +85,30 @@ const ym = {
    */
   /**
    * Скачать файл по URL (с авторизацией)
+   * Для файлов мессенджера пробуем OAuth-токен пользователя, затем Api-Key
    */
   async downloadFile(fileUrl) {
+    const isMessengerFile = fileUrl.includes('files.messenger.yandex.net');
+    const oauthUserToken = config.yandexMarket.oauthUserToken;
+
+    // Для файлов мессенджера — сначала OAuth, потом Api-Key
+    if (isMessengerFile && oauthUserToken) {
+      try {
+        const response = await axios.get(fileUrl, {
+          headers: { 'Authorization': `OAuth ${oauthUserToken}` },
+          responseType: 'arraybuffer',
+          maxRedirects: 5,
+          timeout: 30000,
+        });
+        return {
+          buffer: Buffer.from(response.data),
+          contentType: response.headers['content-type'] || 'application/octet-stream',
+        };
+      } catch (err) {
+        logger.error('OAuth download failed, trying Api-Key', { status: err.response?.status });
+      }
+    }
+
     const response = await axios.get(fileUrl, {
       headers: { 'Api-Key': config.yandexMarket.oauthToken },
       responseType: 'arraybuffer',
