@@ -266,10 +266,10 @@ const retailcrm = {
         originator: originator || 'customer',
         message: {
           external_id: externalMessageId,
-          type: 'file',
+          type: contentType.startsWith('image/') ? 'image' : 'file',
           items: [{
             id: uploadRes.data.id,
-            caption: fileName,
+            caption: actualFileName,
           }],
           created_at: createdAt || new Date().toISOString(),
         },
