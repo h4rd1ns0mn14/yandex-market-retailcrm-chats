@@ -5,6 +5,19 @@ const logger = require('../logger');
 
 let syncing = false;
 
+/**
+ * Конвертирует URL файла мессенджера в прямую CDN-ссылку.
+ * files.messenger.yandex.net/file/{numericId}/{uuid} → avatars.mds.yandex.net (публичная)
+ * files.messenger.yandex.net/file/{uuid} → недоступен напрямую, оставляем как есть
+ */
+function messengerFileToCdnUrl(fileUrl) {
+  const match = fileUrl.match(/files\.messenger\.yandex\.net\/file\/(\d+)\/([a-f0-9-]+)/);
+  if (match) {
+    return `https://avatars.mds.yandex.net/get-mssngr/${match[1]}/${match[2]}/orig`;
+  }
+  return null;
+}
+
 const inbound = {
   async handleNewChat(chatId, chatType, orderId) {
     let channel = storage.getChannelByMarketChatId(String(chatId));
@@ -69,19 +82,13 @@ const inbound = {
       logger.info('Attachments found', { messageId, count: attachments.length, first: JSON.stringify(attachments[0]).substring(0, 200) });
     }
 
-    // Формируем текст с вложениями
-    let fullText = text || '';
-    if (attachments.length > 0 && attachments[0].url) {
-      const fileLinks = attachments.map(f => `📎 ${f.name || 'Вложение'}: ${f.url}`).join('\n');
-      fullText = fullText ? `${fullText}\n\n${fileLinks}` : fileLinks;
-    }
-
-    if (fullText || attachments.length === 0) {
+    // Отправляем текст, если есть
+    if (text) {
       const result = await retailcrm.sendMessage({
         channelId: channel.mg_channel_id,
         externalChatId: channel.mg_external_id,
         externalMessageId: `ym-msg-${messageId}`,
-        text: fullText || '[Вложение]',
+        text,
         createdAt: createdAt || new Date().toISOString(),
         customer,
         originator,
@@ -93,7 +100,73 @@ const inbound = {
         marketChatId: String(chatId),
         direction: isFromBuyer ? 'inbound' : 'outbound',
       });
-    } else {
+    }
+
+    // Отправляем файлы как вложения
+    if (attachments.length > 0 && attachments[0].url) {
+      for (let i = 0; i < attachments.length; i++) {
+        const f = attachments[i];
+        const cdnUrl = messengerFileToCdnUrl(f.url);
+
+        if (cdnUrl) {
+          // Файл доступен на публичном CDN — отправляем как файл через прямой URL
+          try {
+            const result = await retailcrm.sendFileMessage({
+              channelId: channel.mg_channel_id,
+              externalChatId: channel.mg_external_id,
+              externalMessageId: `ym-msg-${messageId}-file-${i}`,
+              fileUrl: cdnUrl,
+              fileName: f.name || 'Фото',
+              createdAt: createdAt || new Date().toISOString(),
+              customer,
+              originator,
+            });
+            logger.info('File sent to MG via CDN', { messageId, fileIndex: i, cdnUrl });
+          } catch (err) {
+            logger.error('Failed to send CDN file to MG', { messageId, error: err.message });
+            await retailcrm.sendMessage({
+              channelId: channel.mg_channel_id,
+              externalChatId: channel.mg_external_id,
+              externalMessageId: `ym-msg-${messageId}-file-${i}`,
+              text: `📎 ${f.name || 'Фото'}: ${cdnUrl}`,
+              createdAt: createdAt || new Date().toISOString(),
+              customer,
+              originator,
+            });
+          }
+        } else {
+          // Файл покупателя — пробуем через прокси, иначе отправляем через прокси-ссылку
+          try {
+            const result = await retailcrm.sendFileMessage({
+              channelId: channel.mg_channel_id,
+              externalChatId: channel.mg_external_id,
+              externalMessageId: `ym-msg-${messageId}-file-${i}`,
+              fileUrl: f.url,
+              fileName: f.name || 'Фото',
+              createdAt: createdAt || new Date().toISOString(),
+              customer,
+              originator,
+            });
+            logger.info('File sent to MG via proxy', { messageId, fileIndex: i });
+          } catch (err) {
+            logger.error('Failed to send file to MG', { messageId, error: err.message });
+            // Фоллбэк: текстовое уведомление со ссылкой
+            await retailcrm.sendMessage({
+              channelId: channel.mg_channel_id,
+              externalChatId: channel.mg_external_id,
+              externalMessageId: `ym-msg-${messageId}-file-${i}`,
+              text: `📎 ${f.name || 'Фото'}: ${f.url}`,
+              createdAt: createdAt || new Date().toISOString(),
+              customer,
+              originator,
+            });
+          }
+        }
+      }
+    }
+
+    // Если нет ни текста, ни вложений — сохраняем запись
+    if (!text && attachments.length === 0) {
       storage.saveMessage({
         marketMessageId: String(messageId),
         mgMessageId: 0,

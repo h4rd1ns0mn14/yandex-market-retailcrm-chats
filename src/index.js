@@ -27,6 +27,20 @@ app.use((req, res, next) => {
 app.use('/webhook/market', marketWebhookRouter);
 app.use('/webhook/retailcrm', retailcrmWebhookRouter);
 
+// Прокси для файлов Яндекс.Маркета (требуют авторизации)
+app.get('/files/:fileId', async (req, res) => {
+  try {
+    const fileUrl = Buffer.from(req.params.fileId, 'base64url').toString('utf-8');
+    logger.info('Proxying file', { fileUrl: fileUrl.substring(0, 100) });
+    const { buffer, contentType } = await ym.downloadFile(fileUrl);
+    res.set('Content-Type', contentType);
+    res.send(buffer);
+  } catch (err) {
+    logger.error('File proxy error', { error: err.message });
+    res.status(500).json({ error: 'Failed to download file' });
+  }
+});
+
 // Healthcheck
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -228,13 +228,19 @@ const retailcrm = {
     const mg = getMgClient();
 
     try {
-      // Проксируем файл через наш сервер (Маркет требует авторизацию)
-      const proxyFileId = Buffer.from(fileUrl).toString('base64url');
-      const proxyUrl = `${config.baseUrl}/files/${proxyFileId}`;
-      logger.info('Uploading file to MG via proxy', { fileName, proxyUrl: proxyUrl.substring(0, 100) });
+      // Публичные URL (CDN) загружаем напрямую, остальные через прокси
+      const isPublicUrl = fileUrl.includes('avatars.mds.yandex.net') || !fileUrl.includes('files.messenger.yandex.net');
+      let uploadUrl;
+      if (isPublicUrl) {
+        uploadUrl = fileUrl;
+      } else {
+        const proxyFileId = Buffer.from(fileUrl).toString('base64url');
+        uploadUrl = `${config.baseUrl}/files/${proxyFileId}`;
+      }
+      logger.info('Uploading file to MG', { fileName, uploadUrl: uploadUrl.substring(0, 120), isPublicUrl });
 
       const uploadRes = await mg.post('/files/upload_by_url', {
-        url: proxyUrl,
+        url: uploadUrl,
       });
       logger.info('File uploaded to MG', { fileId: uploadRes.data?.id });
 

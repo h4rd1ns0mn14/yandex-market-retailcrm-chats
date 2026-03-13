@@ -90,6 +90,7 @@ const ym = {
     const response = await axios.get(fileUrl, {
       headers: { 'Api-Key': config.yandexMarket.oauthToken },
       responseType: 'arraybuffer',
+      maxRedirects: 5,
       timeout: 30000,
     });
     return {
