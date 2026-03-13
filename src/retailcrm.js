@@ -228,19 +228,30 @@ const retailcrm = {
     const mg = getMgClient();
 
     try {
-      // Публичные URL (CDN) загружаем напрямую, остальные через прокси
-      const isPublicUrl = fileUrl.includes('avatars.mds.yandex.net') || !fileUrl.includes('files.messenger.yandex.net');
-      let uploadUrl;
-      if (isPublicUrl) {
-        uploadUrl = fileUrl;
-      } else {
-        const proxyFileId = Buffer.from(fileUrl).toString('base64url');
-        uploadUrl = `${config.baseUrl}/files/${proxyFileId}`;
-      }
-      logger.info('Uploading file to MG', { fileName, uploadUrl: uploadUrl.substring(0, 120), isPublicUrl });
+      // Скачиваем файл с авторизацией Маркета
+      const ym = require('./yandex-market');
+      const FormData = require('form-data');
 
-      const uploadRes = await mg.post('/files/upload_by_url', {
-        url: uploadUrl,
+      logger.info('Downloading file from Market', { fileUrl: fileUrl?.substring(0, 100), fileName });
+      const { buffer, contentType } = await ym.downloadFile(fileUrl);
+      logger.info('File downloaded', { size: buffer.length, contentType });
+
+      // Загружаем в MG через binary upload
+      const form = new FormData();
+      form.append('file', buffer, { filename: fileName, contentType });
+
+      const endpointUrl = config.mg.endpointUrl || storage.getMgConfig('endpointUrl');
+      const token = config.mg.token || storage.getMgConfig('token');
+      const baseURL = endpointUrl.includes('/api/transport/')
+        ? endpointUrl
+        : `${endpointUrl.replace(/\/+$/, '')}/api/transport/v1`;
+
+      const uploadRes = await axios.post(`${baseURL}/files/upload`, form, {
+        headers: {
+          ...form.getHeaders(),
+          'X-Transport-Token': token,
+        },
+        timeout: 30000,
       });
       logger.info('File uploaded to MG', { fileId: uploadRes.data?.id });
 
