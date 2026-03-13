@@ -150,12 +150,12 @@ const inbound = {
             logger.info('File sent to MG via proxy', { messageId, fileIndex: i });
           } catch (err) {
             logger.error('Failed to send file to MG', { messageId, error: err.message });
-            // Фоллбэк: текстовое уведомление со ссылкой
+            // Фоллбэк: текстовое уведомление без битой ссылки
             await retailcrm.sendMessage({
               channelId: channel.mg_channel_id,
               externalChatId: channel.mg_external_id,
               externalMessageId: `ym-msg-${messageId}-file-${i}`,
-              text: `📎 ${f.name || 'Фото'}: ${f.url}`,
+              text: `📎 Покупатель отправил ${f.name || 'фото'} (файл доступен в кабинете Маркета)`,
               createdAt: createdAt || new Date().toISOString(),
               customer,
               originator,
