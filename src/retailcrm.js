@@ -236,9 +236,14 @@ const retailcrm = {
       const { buffer, contentType } = await ym.downloadFile(fileUrl);
       logger.info('File downloaded', { size: buffer.length, contentType });
 
+      // Определяем расширение из content-type
+      const extMap = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp', 'application/pdf': '.pdf' };
+      const ext = extMap[contentType] || '';
+      const actualFileName = fileName && fileName !== 'Фото' ? fileName : `photo${ext}`;
+
       // Загружаем в MG через binary upload
       const form = new FormData();
-      form.append('file', buffer, { filename: fileName, contentType });
+      form.append('file', buffer, { filename: actualFileName, contentType });
 
       const endpointUrl = config.mg.endpointUrl || storage.getMgConfig('endpointUrl');
       const token = config.mg.token || storage.getMgConfig('token');
