@@ -2,4 +2,8 @@ node_modules/
 .env
 data.json
 *.log
+logs/
+app.log
+*.rar
+*.zip
 .DS_Store
