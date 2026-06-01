@@ -4,32 +4,58 @@ const storage = require('../storage');
 const logger = require('../logger');
 
 let syncing = false;
+const INTEGRATION_CHANNEL_EXTERNAL_ID = 'yandex-market';
+const INTEGRATION_CHANNEL_NAME = 'Yandex Market Chats';
 
 const inbound = {
+  async ensureIntegrationChannel() {
+    const existing = storage.getIntegrationChannel();
+    if (existing?.mg_channel_id) {
+      return existing;
+    }
+
+    const result = await retailcrm.activateChannel({
+      externalId: INTEGRATION_CHANNEL_EXTERNAL_ID,
+      name: INTEGRATION_CHANNEL_NAME,
+    });
+
+    const channel = {
+      mgChannelId: result.id || result.channel_id,
+      mgExternalId: INTEGRATION_CHANNEL_EXTERNAL_ID,
+      name: INTEGRATION_CHANNEL_NAME,
+    };
+    storage.saveIntegrationChannel(channel);
+
+    logger.info('Integration channel created', { mgChannelId: channel.mgChannelId });
+
+    return {
+      mg_channel_id: channel.mgChannelId,
+      mg_external_id: channel.mgExternalId,
+      name: channel.name,
+    };
+  },
+
   async handleNewChat(chatId, chatType, orderId) {
+    const integrationChannel = await this.ensureIntegrationChannel();
     let channel = storage.getChannelByMarketChatId(String(chatId));
 
-    if (!channel) {
+    if (!channel || channel.mg_channel_id !== integrationChannel.mg_channel_id) {
       const externalId = `ym-chat-${chatId}`;
-      const channelName = orderId
-        ? `Маркет: Заказ ${orderId}`
-        : `Маркет: Чат ${chatId}`;
-
-      const result = await retailcrm.activateChannel({
-        externalId,
-        name: channelName,
-      });
 
       storage.saveChannel({
         marketChatId: String(chatId),
-        mgChannelId: result.id || result.channel_id,
+        mgChannelId: integrationChannel.mg_channel_id,
         mgExternalId: externalId,
         chatType: chatType || 'UNKNOWN',
         orderId: orderId ? String(orderId) : null,
       });
 
       channel = storage.getChannelByMarketChatId(String(chatId));
-      logger.info('Channel created', { chatId, mgChannelId: channel.mg_channel_id });
+      logger.info('Chat linked to integration channel', {
+        chatId,
+        externalChatId: externalId,
+        mgChannelId: channel.mg_channel_id,
+      });
     }
 
     return channel;

@@ -85,7 +85,9 @@ async function start() {
     // Обновляем настройки существующих каналов (file/image support)
     setTimeout(async () => {
       try {
-        const channels = storage.getAllChannels();
+        const channels = Array.from(
+          new Map(storage.getAllChannels().map(ch => [ch.mg_channel_id, ch])).values()
+        );
         for (const ch of channels) {
           try {
             await retailcrm.updateChannel(ch.mg_channel_id, {

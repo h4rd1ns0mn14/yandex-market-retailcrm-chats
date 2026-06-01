@@ -72,9 +72,12 @@ const retailcrm = {
     const crmUrl = config.retailcrm.url || 'https://rikor.retailcrm.ru';
     const moduleData = {
       code: config.module.code,
+      integrationCode: config.module.code,
       active: true,
       name: config.module.name,
       clientId: crmUrl.replace('https://', '').replace('http://', '').replace(/\/$/, ''),
+      baseUrl: config.baseUrl,
+      accountUrl: config.baseUrl,
       integrations: {
         mgTransport: {
           webhookUrl,
@@ -116,7 +119,11 @@ const retailcrm = {
 
       return data;
     } catch (err) {
-      if (err.response?.status === 403) {
+      const moduleAlreadyBound =
+        err.response?.status === 400 &&
+        err.response?.data?.errorMsg === 'Integration module can only be edited using related API key';
+
+      if (err.response?.status === 403 || moduleAlreadyBound) {
         // Модуль уже существует, пробуем получить информацию
         logger.warn('Module may already exist, trying to get info...');
         

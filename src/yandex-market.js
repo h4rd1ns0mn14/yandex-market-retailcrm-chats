@@ -34,6 +34,17 @@ const ym = {
   },
 
   /**
+   * Получить один чат по ID.
+   * Используется для CHAT_CREATED: уведомление содержит только chatId.
+   */
+  async getChat(chatId) {
+    const { data } = await client.get('/chat', {
+      params: { chatId },
+    });
+    return data.result || data.chat || data;
+  },
+
+  /**
    * Получить историю сообщений чата
    * @param {number} chatId
    * @param {Object} params - messageIdFrom, limit
@@ -49,6 +60,17 @@ const ym = {
 
     const { data } = await client.post('/chats/history', body, { params: query });
     return data;
+  },
+
+  /**
+   * Получить одно сообщение по ID.
+   * Используется для CHAT_MESSAGE_SENT: уведомление содержит только chatId/messageId.
+   */
+  async getChatMessage(chatId, messageId) {
+    const { data } = await client.get('/chats/message', {
+      params: { chatId, messageId },
+    });
+    return data.result || data.message || data;
   },
 
   /**

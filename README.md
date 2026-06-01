@@ -62,16 +62,6 @@ npm run dev
 
 ## Деплой
 
-### Wispbyte
-
-1. Подключите GitHub-репозиторий в панели Wispbyte
-2. Укажите runtime Node.js `18+`
-3. Startup command: `npm start`
-4. Добавьте ENV из `.env.example` (обязательно `BASE_URL` с HTTPS)
-5. Проверьте `GET /health`
-
-Подробный чеклист: `DEPLOY_WISPBYTE.md`
-
 ### Railway
 
 1. Создайте репозиторий на GitHub

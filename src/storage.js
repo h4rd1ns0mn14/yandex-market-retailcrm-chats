@@ -58,6 +58,21 @@ const storage = {
     return Object.values(db.channels);
   },
 
+  getIntegrationChannel() {
+    return db.mgConfig.integrationChannel || null;
+  },
+
+  saveIntegrationChannel({ mgChannelId, mgExternalId, name }) {
+    db.mgConfig.integrationChannel = {
+      mg_channel_id: mgChannelId,
+      mg_external_id: mgExternalId,
+      name,
+      created_at: db.mgConfig.integrationChannel?.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    saveDb(db);
+  },
+
   getChannelByMgExternalId(externalId) {
     return Object.values(db.channels).find(ch => ch.mg_external_id === externalId) || null;
   },
