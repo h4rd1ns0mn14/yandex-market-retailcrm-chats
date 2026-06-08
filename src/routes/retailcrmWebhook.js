@@ -15,28 +15,44 @@ router.post('/', async (req, res) => {
 
     logger.info(`RetailCRM MG webhook: ${events.length} event(s)`);
 
+    const responses = [];
     for (const event of events) {
       try {
-        await outbound.handleMgWebhook(event);
+        responses.push(await outbound.handleMgWebhook(event));
       } catch (err) {
         logger.error('Error processing MG event', {
           type: event.type,
           error: err.message,
         });
+        responses.push({
+          async: false,
+          error: {
+            code: 'general',
+            message: err.message || 'Internal error',
+          },
+        });
       }
     }
 
-    res.json({ status: 'ok' });
+    const responseBody = Array.isArray(req.body) ? responses : responses[0];
+    logger.info('RetailCRM webhook response', { body: JSON.stringify(responseBody).substring(0, 500) });
+    res.json(responseBody);
   } catch (err) {
     logger.error('Error processing RetailCRM webhook', { error: err.message });
-    res.status(500).json({ error: 'Internal error' });
+    res.status(500).json({
+      async: false,
+      error: {
+        code: 'general',
+        message: 'Internal error',
+      },
+    });
   }
 });
 
 // GET для проверки доступности (MG может пинговать)
 router.get('/', (req, res) => {
   logger.info('RetailCRM webhook GET ping');
-  res.json({ status: 'ok' });
+  res.json({});
 });
 
 module.exports = router;

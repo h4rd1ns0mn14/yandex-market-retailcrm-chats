@@ -4,6 +4,24 @@ const storage = require('../storage');
 const config = require('../config');
 const logger = require('../logger');
 
+function messageSentResponse({ externalChatId, externalCustomerId, externalMessageId, error }) {
+  const response = {
+    async: false,
+  };
+
+  if (externalChatId) response.external_chat_id = String(externalChatId);
+  if (externalCustomerId) response.external_customer_id = String(externalCustomerId);
+  if (externalMessageId) response.external_message_id = String(externalMessageId);
+  if (error) {
+    response.error = {
+      code: 'general',
+      message: error,
+    };
+  }
+
+  return response;
+}
+
 const outbound = {
   async handleMgWebhook(event) {
     const eventType = event.type || event.Type;
@@ -15,15 +33,15 @@ const outbound = {
         if (typeof msgData === 'string') {
           msgData = JSON.parse(msgData);
         }
-        await this.handleMessageSent(msgData);
-        break;
+        return this.handleMessageSent(msgData);
       }
       case 'message_updated':
       case 'message_deleted':
       case 'message_read':
-        break;
+        return {};
       default:
         logger.info('Unknown MG event', { type: eventType });
+        return {};
     }
   },
 
@@ -105,21 +123,31 @@ const outbound = {
 
     if (!externalChatId) {
       logger.warn('Missing external_chat_id');
-      return;
+      return messageSentResponse({ error: 'Missing external_chat_id' });
     }
 
-    if (!user) {
-      logger.info('No user in webhook, skipping');
-      return;
+    if (!user && !data.bot) {
+      logger.info('No user or bot in webhook, skipping');
+      return messageSentResponse({
+        externalChatId,
+        externalCustomerId: data.external_user_id,
+        error: 'Missing message sender',
+      });
     }
 
     const channel = storage.getChannelByMgExternalId(externalChatId);
     if (!channel) {
       logger.error('Channel not found', { externalChatId });
-      return;
+      return messageSentResponse({
+        externalChatId,
+        externalCustomerId: data.external_user_id,
+        error: 'Channel not found',
+      });
     }
 
     const marketChatId = parseInt(channel.market_chat_id, 10);
+    let externalMessageId = null;
+    let sentToMarket = false;
 
     try {
       // Обработка файлов
@@ -139,6 +167,11 @@ const outbound = {
 
             const sendResult = await ym.sendFile(marketChatId, buffer, filename);
             logger.info('File sent to Market', { marketChatId, filename, result: JSON.stringify(sendResult).substring(0, 200) });
+            sentToMarket = true;
+            const ymMessageId = sendResult.messageId || sendResult.result?.messageId;
+            if (ymMessageId && !externalMessageId) {
+              externalMessageId = `ym-msg-${ymMessageId}`;
+            }
           } catch (err) {
             logger.error('Error sending file to Market', { error: err.message, response: err.response?.data });
           }
@@ -149,9 +182,11 @@ const outbound = {
       if (msgType === 'text' && content) {
         const result = await ym.sendMessage(marketChatId, content);
         logger.info('Message sent to Market', { marketChatId, text: content.substring(0, 50) });
+        sentToMarket = true;
 
         const ymMessageId = result.messageId || result.result?.messageId;
         if (ymMessageId) {
+          externalMessageId = `ym-msg-${ymMessageId}`;
           storage.saveMessage({
             marketMessageId: String(ymMessageId),
             mgMessageId: String(data.id || 0),
@@ -162,18 +197,44 @@ const outbound = {
       } else if ((msgType === 'file' || msgType === 'image') && items.length === 0) {
         // Файл без items — попробуем content как текст
         if (content) {
-          await ym.sendMessage(marketChatId, content);
+          const result = await ym.sendMessage(marketChatId, content);
+          sentToMarket = true;
+          const ymMessageId = result.messageId || result.result?.messageId;
+          if (ymMessageId) {
+            externalMessageId = `ym-msg-${ymMessageId}`;
+          }
           logger.info('File caption sent as text', { marketChatId });
         }
       }
+
+      if (!sentToMarket) {
+        return messageSentResponse({
+          externalChatId,
+          externalCustomerId: data.external_user_id || `ym-buyer-${marketChatId}`,
+          error: 'Message was not sent to Yandex Market',
+        });
+      }
+
+      return messageSentResponse({
+        externalChatId,
+        externalCustomerId: data.external_user_id || `ym-buyer-${marketChatId}`,
+        externalMessageId,
+      });
     } catch (err) {
       logger.error('Error sending to Market', {
         marketChatId,
         error: err.message,
         response: err.response?.data,
       });
+      return messageSentResponse({
+        externalChatId,
+        externalCustomerId: data.external_user_id || `ym-buyer-${marketChatId}`,
+        error: err.response?.data?.message || err.message || 'Failed to send message',
+      });
     }
   },
 };
+
+outbound.messageSentResponse = messageSentResponse;
 
 module.exports = outbound;

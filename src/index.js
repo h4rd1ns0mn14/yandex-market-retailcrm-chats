@@ -97,7 +97,15 @@ async function start() {
                 image: { creating: 'both', max_files_count: 10 },
               },
             });
-          } catch (e) { /* ignore */ }
+            logger.info('Channel settings updated', { mgChannelId: ch.mg_channel_id });
+          } catch (e) {
+            logger.error('Channel settings update failed', {
+              mgChannelId: ch.mg_channel_id,
+              status: e.response?.status,
+              response: e.response?.data,
+              error: e.message,
+            });
+          }
         }
         logger.info('Channels updated with file support');
       } catch (e) { /* ignore */ }

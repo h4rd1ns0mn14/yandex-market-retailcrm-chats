@@ -9,6 +9,19 @@ const crmClient = axios.create({
   timeout: 15000,
 });
 
+function sanitizeRegistrationResponse(data) {
+  const mgTransport = data?.info?.mgTransport;
+  return {
+    success: data?.success,
+    mgTransport: mgTransport
+      ? {
+          endpointUrl: mgTransport.endpointUrl,
+          tokenReceived: Boolean(mgTransport.token),
+        }
+      : undefined,
+  };
+}
+
 // Логирование ответов для отладки
 crmClient.interceptors.response.use(
   (res) => res,
@@ -72,12 +85,9 @@ const retailcrm = {
     const crmUrl = config.retailcrm.url || 'https://rikor.retailcrm.ru';
     const moduleData = {
       code: config.module.code,
-      integrationCode: config.module.code,
       active: true,
       name: config.module.name,
       clientId: crmUrl.replace('https://', '').replace('http://', '').replace(/\/$/, ''),
-      baseUrl: config.baseUrl,
-      accountUrl: config.baseUrl,
       integrations: {
         mgTransport: {
           webhookUrl,
@@ -102,7 +112,7 @@ const retailcrm = {
         }
       );
 
-      logger.info('RetailCRM response', { data });
+      logger.info('RetailCRM response', sanitizeRegistrationResponse(data));
 
       if (!data.success) {
         throw new Error(`Module registration failed: ${JSON.stringify(data)}`);
@@ -119,11 +129,7 @@ const retailcrm = {
 
       return data;
     } catch (err) {
-      const moduleAlreadyBound =
-        err.response?.status === 400 &&
-        err.response?.data?.errorMsg === 'Integration module can only be edited using related API key';
-
-      if (err.response?.status === 403 || moduleAlreadyBound) {
+      if (err.response?.status === 403) {
         // Модуль уже существует, пробуем получить информацию
         logger.warn('Module may already exist, trying to get info...');
         
